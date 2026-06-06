@@ -1,0 +1,6 @@
+{
+  "name": "SSlive",
+  "description": "A modern, AI-powered real-time meeting feedback and response system featuring instant quizzes, live space race games, quick questions, and smart exports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

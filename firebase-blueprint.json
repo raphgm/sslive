@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "Quiz": {
+      "title": "Quiz",
+      "description": "A quiz containing multiple questions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "questions": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      },
+      "required": ["id", "title", "teacherId", "questions"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "An active classroom room session",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "activeActivity": { "type": "string" },
+        "activeQuizId": { "type": "string" },
+        "activeQuestionIndex": { "type": "integer" },
+        "pacing": { "type": "string" },
+        "quickQuestion": { "type": "object" },
+        "showFeedback": { "type": "boolean" },
+        "showResults": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "teacherId"]
+    },
+    "Participant": {
+      "title": "Participant",
+      "description": "A student participating in a room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "team": { "type": "string" },
+        "score": { "type": "integer" },
+        "progress": { "type": "integer" },
+        "answers": { "type": "object" },
+        "completed": { "type": "boolean" },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "score", "progress", "answers", "completed"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "A historical report of a completed classroom activity session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "roomCode": { "type": "string" },
+        "quizTitle": { "type": "string" },
+        "activityType": { "type": "string" },
+        "pacing": { "type": "string" },
+        "endedAt": { "type": "string", "format": "date-time" },
+        "participantCount": { "type": "integer" },
+        "averageScore": { "type": "integer" },
+        "participants": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "questions": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      },
+      "required": ["id", "teacherId", "roomCode", "quizTitle", "activityType", "endedAt", "participantCount", "averageScore", "participants", "questions"]
+    }
+  },
+  "firestore": {
+    "/quizzes/{quizId}": {
+      "schema": "Quiz",
+      "description": "Saved quizzes by teachers"
+    },
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Active rooms"
+    },
+    "/rooms/{roomId}/participants/{participantId}": {
+      "schema": "Participant",
+      "description": "Students active in the room"
+    },
+    "/reports_history/{reportId}": {
+      "schema": "Report",
+      "description": "Completed session activity reports"
+    }
+  }
+}
