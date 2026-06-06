@@ -48,27 +48,41 @@ export default function RoomsView({
   const [renamingText, setRenamingText] = useState("");
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
 
-  const handleAddRoom = async () => {
+  // Room code modal state
+  const [showRoomCodeModal, setShowRoomCodeModal] = useState(false);
+  const [roomCodeInput, setRoomCodeInput] = useState("");
+  const [roomCodeError, setRoomCodeError] = useState("");
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+
+  const openRoomCodeModal = () => {
+    setRoomCodeInput("");
+    setRoomCodeError("");
+    setShowRoomCodeModal(true);
+  };
+
+  const handleAddRoom = () => {
     if (!isProLicensed && allRooms.length >= 1) {
       setIsUpgradeModalOpen(true);
       return;
     }
+    openRoomCodeModal();
+  };
 
-    const rawCode = prompt("Enter a unique Room Code (alphanumeric, 3+ characters):");
-    if (!rawCode) return;
-    const formattedCode = rawCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const handleConfirmRoomCode = async () => {
+    const formattedCode = roomCodeInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (formattedCode.length < 3) {
-      alert("Room Code must be at least 3 characters.");
+      setRoomCodeError("Room Code must be at least 3 alphanumeric characters.");
       return;
     }
-
+    setIsCreatingRoom(true);
+    setRoomCodeError("");
     try {
       const docSnap = await getDoc(doc(db, "rooms", formattedCode));
       if (docSnap.exists()) {
-        alert(`Room Code "${formattedCode}" is already taken.`);
+        setRoomCodeError(`Room Code "${formattedCode}" is already taken. Try another.`);
+        setIsCreatingRoom(false);
         return;
       }
-
       const newRoom: Room = {
         roomId: formattedCode,
         teacherId: teacherUid,
@@ -81,13 +95,15 @@ export default function RoomsView({
         showResults: true,
         createdAt: new Date().toISOString()
       };
-
       await setDoc(doc(db, "rooms", formattedCode), newRoom);
       setActiveRoomId(formattedCode);
-      alert(`Room "${formattedCode}" created and selected as active!`);
+      setShowRoomCodeModal(false);
+      setRoomCodeInput("");
     } catch (e) {
       console.error(e);
-      alert("Failed to create room.");
+      setRoomCodeError("Failed to create room. Please try again.");
+    } finally {
+      setIsCreatingRoom(false);
     }
   };
 
@@ -122,7 +138,6 @@ export default function RoomsView({
       if (activeRoomId === oldCode) {
         setActiveRoomId(formattedCode);
       }
-      alert(`Room successfully renamed from ${oldCode} to ${formattedCode}!`);
     } catch (e) {
       console.error(e);
       alert("Failed to rename room. Check database security rules.");
@@ -220,7 +235,6 @@ export default function RoomsView({
                       isSelected ? "bg-slate-50/75 font-semibold" : "hover:bg-slate-50/25"
                     }`}
                   >
-                    {/* IN MENU CHECKBOX */}
                     <td className="py-3.5 px-5 text-center" onClick={(e) => e.stopPropagation()}>
                       <input 
                         type="checkbox"
@@ -229,8 +243,6 @@ export default function RoomsView({
                         className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
                       />
                     </td>
-
-                    {/* STATUS DOT */}
                     <td className="py-3.5 px-4 text-center">
                       <div className="flex items-center justify-center">
                         <span className={`w-2.5 h-2.5 rounded-full ${
@@ -240,8 +252,6 @@ export default function RoomsView({
                         }`} title={hasActiveSession ? "Live Active Activity underway" : "Inactive Room"} />
                       </div>
                     </td>
-
-                    {/* ROOM NAME with In-line Renaming Support */}
                     <td className="py-3.5 px-5">
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                         {renamingRoomId === r.roomId ? (
@@ -296,8 +306,6 @@ export default function RoomsView({
                         )}
                       </div>
                     </td>
-
-                    {/* SHARE BUTTON */}
                     <td className="py-3.5 px-5 text-center" onClick={(e) => e.stopPropagation()}>
                       <button 
                         onClick={() => {
@@ -305,7 +313,7 @@ export default function RoomsView({
                           navigator.clipboard.writeText(clickUrl).then(() => {
                             let originUrl = window.location.origin;
                             if (originUrl.includes("ais-dev")) {
-                              alert(`Join link copied! \n\nNote: You are in the private dev environment, so this link only works for you. To share with real students, please click "Deploy/Share" in AI Studio first!`);
+                              alert(`Join link copied!\n\nNote: You are in the private dev environment. To share with real students, please deploy first.`);
                             } else {
                               alert(`Join link copied for ${r.roomId}!`);
                             }
@@ -317,16 +325,12 @@ export default function RoomsView({
                         <Share2 size={14} />
                       </button>
                     </td>
-
-                    {/* ROSTER COUNTER */}
                     <td className="py-3.5 px-5 text-center">
                       <div className="flex items-center justify-center gap-1 text-slate-500 font-mono text-xs">
                         <Users size={12} className="text-slate-400" />
                         <span>{isSelected ? participantsCount : 0}</span>
                       </div>
                     </td>
-
-                    {/* DELETE ICON */}
                     <td className="py-3.5 px-5 text-center" onClick={(e) => e.stopPropagation()}>
                       <button 
                         onClick={(evt) => handleDeleteRoom(r.roomId, evt)}
@@ -344,9 +348,8 @@ export default function RoomsView({
         </div>
       </div>
 
-      {/* Central promo/add room teaser section exactly matching Screenshot 1 Layout */}
+      {/* Central promo/add room teaser section */}
       <div className="flex flex-col items-center justify-center py-12 px-6 bg-white border border-slate-200 rounded-3xl shadow-3xs max-w-xl mx-auto mt-8 text-center">
-        {/* Grey User illustration */}
         <div className="flex items-center justify-center -space-x-4 text-slate-150 mb-4 scale-110">
           <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center text-slate-350 border-2 border-white shadow-3xs">
             <Users size={28} strokeWidth={1.5} />
@@ -369,55 +372,100 @@ export default function RoomsView({
         </button>
       </div>
 
-      {/* Upgrade rooms modal matching Screenshot 2 Layout */}
+      {/* ── Room Code Input Modal ── */}
+      {showRoomCodeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            onClick={() => setShowRoomCodeModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl w-full max-w-sm shadow-2xl border border-slate-100 p-6 z-10">
+            <button
+              onClick={() => setShowRoomCodeModal(false)}
+              className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-full transition-all cursor-pointer"
+            >
+              <X size={15} />
+            </button>
+
+            <h3 className="text-[15px] font-bold text-slate-800 mb-1">Create a Room</h3>
+            <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
+              Choose a unique alphanumeric code (3–15 characters). Students use this to join your room.
+            </p>
+
+            <input
+              type="text"
+              value={roomCodeInput}
+              onChange={(e) => {
+                setRoomCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""));
+                setRoomCodeError("");
+              }}
+              onKeyDown={(e) => e.key === "Enter" && handleConfirmRoomCode()}
+              placeholder="e.g. MATH101"
+              maxLength={15}
+              autoFocus
+              className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-mono font-bold uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-300 placeholder:uppercase"
+            />
+
+            {roomCodeError && (
+              <p className="text-[11px] text-red-500 mt-2 font-medium">{roomCodeError}</p>
+            )}
+
+            <div className="flex gap-2.5 mt-4">
+              <button
+                onClick={() => setShowRoomCodeModal(false)}
+                className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmRoomCode}
+                disabled={isCreatingRoom || roomCodeInput.length < 3}
+                className="flex-1 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                {isCreatingRoom ? (
+                  <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                ) : (
+                  <Plus size={13} />
+                )}
+                {isCreatingRoom ? "Creating…" : "Create Room"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upgrade rooms modal */}
       {isUpgradeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div 
             onClick={() => setIsUpgradeModalOpen(false)}
             className="absolute inset-0 bg-slate-900/30 backdrop-blur-xs"
           />
-
           <div className="relative bg-white rounded-3xl w-full max-w-[390px] shadow-2xl border border-slate-100 p-6 z-10 flex flex-col text-left">
-            {/* Close button at top-right */}
             <button 
               onClick={() => setIsUpgradeModalOpen(false)}
               className="absolute top-4.5 right-4.5 p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-full transition-all cursor-pointer"
-              aria-label="Close modal"
             >
               <X size={15} />
             </button>
-
-            {/* Content exactly matching Screenshot 2 */}
             <h3 className="text-[15px] font-sans font-bold text-slate-800 pr-8">
               Upgrade to Add More Rooms
             </h3>
-            
             <p className="text-[11px] text-slate-500 mt-3 leading-relaxed font-sans">
               Rooms allow you to launch multiple activities at the same time for all your classes. Upgrade to SSlive PRO and get more features:
             </p>
-
             <ul className="space-y-2.5 mt-4">
-              <li className="flex items-center gap-2 text-[11px] text-slate-600 font-semibold font-sans">
-                <span className="text-sky-500 shrink-0">
-                  <Check size={13} strokeWidth={4} />
-                </span>
-                <span>Email individual reports</span>
-              </li>
-              <li className="flex items-center gap-2 text-[11px] text-slate-600 font-semibold font-sans">
-                <span className="text-sky-500 shrink-0">
-                  <Check size={13} strokeWidth={4} />
-                </span>
-                <span>Manage student access to rooms</span>
-              </li>
-              <li className="flex items-center gap-2 text-[11px] text-slate-600 font-semibold font-sans">
-                <span className="text-sky-500 shrink-0">
-                  <Check size={13} strokeWidth={4} />
-                </span>
-                <span>One attempt on quizzes</span>
-              </li>
+              {["Email individual reports", "Manage student access to rooms", "One attempt on quizzes"].map(f => (
+                <li key={f} className="flex items-center gap-2 text-[11px] text-slate-600 font-semibold font-sans">
+                  <span className="text-sky-500 shrink-0"><Check size={13} strokeWidth={4} /></span>
+                  <span>{f}</span>
+                </li>
+              ))}
             </ul>
-
-            <div className="flex gap-2.5 mt-6.5">
+            <div className="flex gap-2.5 mt-6">
               <button
                 onClick={() => setIsUpgradeModalOpen(false)}
                 className="flex-1 py-2 border border-slate-150 hover:bg-slate-50 text-slate-605 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
