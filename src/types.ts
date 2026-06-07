@@ -70,6 +70,12 @@ export interface Room {
   assignmentCloseAt?: string;
   /** Assignment title shown to students */
   assignmentTitle?: string;
+  /** Challenge mode: viral async game, anyone can join via share link, leaderboard accumulates */
+  challengeMode?: boolean;
+  /** Display name of who created the challenge (for the banner) */
+  challengeCreatorName?: string;
+  /** Optional title for the challenge */
+  challengeTitle?: string;
   createdAt: any;
 }
 
