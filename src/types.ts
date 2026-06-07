@@ -83,4 +83,15 @@ export interface Participant {
     nuanced?: number;
     voters?: string[];
   }>;
+  // ─── Kahoot-style game enhancements ────────────────────────────────────
+  /** Current consecutive-correct streak */
+  currentStreak?: number;
+  /** Highest streak achieved during this session */
+  maxStreak?: number;
+  /** Total bonus points earned from streaks */
+  streakBonus?: number;
+  /** Last reaction emoji submitted (for floating animation on teacher screen) */
+  lastReactionEmoji?: string;
+  /** ISO timestamp of last reaction (drives floating animation) */
+  lastReactionAt?: string;
 }
