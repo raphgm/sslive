@@ -35,6 +35,23 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
   const [floatingReactions, setFloatingReactions] = useState<Array<{ id: string; emoji: string; xPct: number; name: string }>>([]);
   const lastReactionTimestampsRef = React.useRef<Record<string, string>>({});
 
+  // Wave 7: pick up skill.sch deep-link topic from sessionStorage
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("sslive_skillsch_topic");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.topic) {
+          setSkillSchTopic(parsed.topic);
+          setCreatorInitialMode("ai");
+          setCurrentView("creator");
+          // Consume — only auto-open once per visit
+          sessionStorage.removeItem("sslive_skillsch_topic");
+        }
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     participants.forEach(p => {
       const prev = lastReactionTimestampsRef.current[p.id];
@@ -56,6 +73,8 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
 
   // View States
   const [currentView, setCurrentView] = useState<"launchpad" | "quizzes" | "discover" | "rooms" | "reports" | "live-results" | "creator">("launchpad");
+  // Wave 7: skill.sch deep link
+  const [skillSchTopic, setSkillSchTopic] = useState<string>("");
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
   const [isAddQuizModalOpen, setIsAddQuizModalOpen] = useState(false);
   const [creatorInitialMode, setCreatorInitialMode] = useState<"manual" | "ai" | "import-paste" | "import-pro" | "import-excel">("manual");
@@ -954,9 +973,11 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
         onCancel={() => {
           setEditingQuiz(null);
           setCurrentView("quizzes");
+          setSkillSchTopic("");
         }} 
         existingQuiz={editingQuiz}
         initialMode={editingQuiz ? "manual" : creatorInitialMode}
+        initialAiTopic={!editingQuiz ? skillSchTopic : undefined}
       />
     );
   }
