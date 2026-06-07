@@ -100,7 +100,7 @@ export function DialecticChallengeCard({
           {submitted ? (
             <div className="bg-emerald-900/25 border border-emerald-500/25 p-3 rounded-xl flex items-center gap-2.5 text-xs text-emerald-300 animate-fade-in">
               <Check size={14} className="shrink-0" />
-              <span>Your dialectic rebuttal is live-posted to classmates' roster forum!</span>
+              <span>Your rebuttal is live in the classmates' feed!</span>
             </div>
           ) : (
             <form onSubmit={handleSubmitRebuttal} className="flex gap-2">
