@@ -196,7 +196,107 @@ export default function LiveResultsView({
               onFinishRace={handleEndActivity}
             />
           )}
-          
+
+          {/* Live Word Cloud + Puzzle results — only when quiz active w/ those Q types */}
+          {room.activeActivity === "quiz" && currentQuiz && (() => {
+            const qIdx = room.activeQuestionIndex;
+            const q = currentQuiz.questions[qIdx];
+            if (!q) return null;
+
+            if (q.type === "word-cloud") {
+              // Aggregate words case-insensitively
+              const freq: Record<string, number> = {};
+              participants.forEach(p => {
+                const word = (p.answers?.[qIdx] || "").trim().toLowerCase();
+                if (word) freq[word] = (freq[word] || 0) + 1;
+              });
+              const entries = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+              const max = entries[0]?.[1] || 1;
+              return (
+                <div className="bg-gradient-to-br from-violet-50/40 via-white to-violet-50/30 p-6 md:p-8 rounded-2xl border border-violet-200/60 shadow-3xs space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-[10px] font-mono text-violet-500 font-bold uppercase tracking-wider">LIVE WORD CLOUD</h4>
+                      <p className="text-sm font-display font-bold text-slate-800 mt-1">{q.text}</p>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+                      {entries.length} unique · {participants.filter(p => p.answers?.[qIdx]).length} submitted
+                    </span>
+                  </div>
+                  {entries.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic text-center py-12">Waiting for first word…</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-3 justify-center items-center py-6 min-h-[180px]">
+                      {entries.map(([word, count]) => {
+                        const ratio = count / max;
+                        const fontSize = 14 + ratio * 38; // 14px → 52px
+                        const hue = 250 + ratio * 30; // violet range
+                        const weight = ratio > 0.7 ? 900 : ratio > 0.4 ? 700 : 500;
+                        return (
+                          <span
+                            key={word}
+                            className="transition-all duration-500"
+                            style={{
+                              fontSize: `${fontSize}px`,
+                              fontWeight: weight,
+                              color: `hsl(${hue}, ${50 + ratio * 30}%, ${55 - ratio * 25}%)`,
+                              opacity: 0.6 + ratio * 0.4,
+                              lineHeight: 1.1,
+                            }}
+                            title={`${count}x`}
+                          >
+                            {word}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            if (q.type === "puzzle-order") {
+              const expected = (q.correctAnswer || q.options.join("|")).trim();
+              const submissions = participants.filter(p => p.answers?.[qIdx]);
+              const correctCount = submissions.filter(p => (p.answers[qIdx] || "").trim() === expected).length;
+              const pct = submissions.length > 0 ? Math.round((correctCount / submissions.length) * 100) : 0;
+              return (
+                <div className="bg-gradient-to-br from-amber-50/30 via-white to-amber-50/20 p-6 md:p-8 rounded-2xl border border-amber-200/60 shadow-3xs space-y-5">
+                  <div>
+                    <h4 className="text-[10px] font-mono text-amber-600 font-bold uppercase tracking-wider">PUZZLE / ORDER · LIVE ACCURACY</h4>
+                    <p className="text-sm font-display font-bold text-slate-800 mt-1">{q.text}</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-4 bg-emerald-50 border border-emerald-200/60 rounded-xl text-center">
+                      <p className="text-2xl font-mono font-black text-emerald-700">{correctCount}</p>
+                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mt-0.5">Correct Order</p>
+                    </div>
+                    <div className="p-4 bg-rose-50 border border-rose-200/60 rounded-xl text-center">
+                      <p className="text-2xl font-mono font-black text-rose-600">{submissions.length - correctCount}</p>
+                      <p className="text-[10px] text-rose-600 font-bold uppercase tracking-wider mt-0.5">Out of Order</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl text-center">
+                      <p className="text-2xl font-mono font-black text-slate-800">{pct}%</p>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">Accuracy</p>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-slate-50/60 border border-slate-200/40 rounded-xl">
+                    <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest font-bold mb-2">Correct Sequence</p>
+                    <ol className="space-y-1.5">
+                      {q.options.map((opt, i) => (
+                        <li key={i} className="flex items-center gap-2 text-xs text-slate-700">
+                          <span className="w-5 h-5 rounded bg-amber-500/15 text-amber-700 font-mono font-bold text-[10px] flex items-center justify-center">{i + 1}</span>
+                          <span>{opt}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           {/* Quick Question View */}
           {room.activeActivity === "quick-question" && room.quickQuestion && (
             <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-3xs space-y-6">
