@@ -110,6 +110,8 @@ export default function App() {
   // States for student joining from landing page
   const [landingRoomInput, setLandingRoomInput] = useState("");
   const [studentInitialRoom, setStudentInitialRoom] = useState("");
+  // Wave 7 — skill.sch deep link
+  const [skillSchTopic, setSkillSchTopic] = useState<{ topic: string; course?: string } | null>(null);
 
   // Simulator States to drive interactive playground
   const [simTab, setSimTab] = useState<"quiz" | "spacerace" | "poll">("quiz");
@@ -451,6 +453,17 @@ export default function App() {
       setStudentInitialRoom(directCode);
       setPortalMode("student");
     }
+
+    // Wave 7 — skill.sch sent a topic to quiz on
+    if (params.get("from") === "skillsch" && params.has("topic")) {
+      const topic = params.get("topic") || "";
+      const course = params.get("course") || undefined;
+      setSkillSchTopic({ topic, course });
+      // Persist for teacher mode so the AI generator can auto-fill
+      try {
+        sessionStorage.setItem("sslive_skillsch_topic", JSON.stringify({ topic, course }));
+      } catch {}
+    }
     
     // Check for Paystack payment success callback
     if (params.has("payment_success")) {
@@ -651,6 +664,52 @@ export default function App() {
             <p className="max-w-2xl mx-auto text-sm sm:text-base md:text-[17px] text-slate-500 mb-10 leading-relaxed font-normal">
               SSlive fuses conversational dialectical reasoning and AI-powered diagnostic quiz rails to turn dry meetings into responsive arenas of live debate, interactive review, and active learning.
             </p>
+
+            {/* Wave 7 — skill.sch course quiz invite banner */}
+            {skillSchTopic && (
+              <div className="max-w-md mx-auto mb-5">
+                <div className="relative overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-orange-50/60 to-rose-50/40 p-5 shadow-sm">
+                  <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500" />
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-amber-100/80 text-amber-700 border border-amber-200 font-mono font-bold text-[10px] px-2.5 py-1 rounded-full tracking-wider uppercase">
+                      🎯 From SKILL.SCH
+                    </span>
+                    {skillSchTopic.course && (
+                      <span className="text-[10px] font-mono text-slate-500 truncate">{skillSchTopic.course}</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mb-1">Generate a quiz on:</p>
+                  <h3 className="text-lg font-display font-black text-slate-900 mb-3 leading-tight">
+                    {skillSchTopic.topic}
+                  </h3>
+                  <p className="text-[11px] text-slate-600 leading-relaxed mb-4">
+                    Sign in as a teacher to AI-generate a quiz on this topic, or enter a room code below to join as a student.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentUser) {
+                          setPortalMode("teacher");
+                        } else {
+                          setPortalMode("login");
+                        }
+                      }}
+                      className="flex-1 px-3 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-[11px] font-bold rounded-xl transition-all shadow-sm"
+                    >
+                      🚀 Generate Quiz
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSkillSchTopic(null)}
+                      className="px-3 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 text-[11px] font-bold rounded-xl transition-colors"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="max-w-md mx-auto relative">
               <form 
