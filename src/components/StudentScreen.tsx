@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { playSound, generateNicknames, getRandomFact, streakBonus, REACTIONS } from "../lib/gameEnhancements";
 import { TEAMS } from "../lib/teams";
+import { addWrongAnswers } from "../lib/practice";
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, serverTimestamp } from "firebase/firestore";
 import { motion } from "motion/react";
 import confetti from "canvas-confetti";
@@ -421,6 +422,20 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         streakBonus: newStreakBonusTotal,
         completed: !isTeacherPaced && isQuizFinished
       } : null);
+
+      // Wave 6: push wrong answer to practice deck for spaced repetition
+      if (!isCorrect && !isParticipation && activeRoom.activeActivity === "quiz" && activeRoom.activeQuizId) {
+        try {
+          addWrongAnswers(
+            studentRecord.name,
+            activeRoom.activeQuizId,
+            "Live Quiz",
+            [{ questionIndex: currentQIdx, question: currentQ }],
+          );
+        } catch (e) {
+          console.warn("Failed to add to practice deck", e);
+        }
+      }
 
       // Handle student Paced Immediate Feedback display pops!
       if (!isTeacherPaced && activeRoom.showFeedback && activeRoom.activeActivity === "quiz") {
