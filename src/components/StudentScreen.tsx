@@ -621,7 +621,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         </div>
 
         {step === "active-session" && activeRoom && studentRecord && (
-          <div className="flex items-center bg-white/60 backdrop-blur-xl p-1.5 rounded-[24px] border border-slate-200/60 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] gap-1 shrink-0 ml-4 max-w-[280px]">
+          <div className="flex items-center bg-white/60 backdrop-blur-xl p-1.5 rounded-[24px] border border-slate-200/60 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] gap-1 shrink-0 ml-4 max-w-full sm:max-w-[440px]">
             <button
               onClick={handleToggleNeedHelp}
               className={`group px-3 py-1.5 rounded-[18px] text-[11px] sm:text-[12px] font-bold flex items-center justify-center gap-1.5 transition-all duration-300 cursor-pointer flex-1 w-24 relative overflow-hidden ${
@@ -654,9 +654,9 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
             
             <div className="w-[1px] h-6 bg-slate-200/80 mx-0.5 shrink-0" />
             
-            <div className="flex-1 w-24 px-3 py-1.5 rounded-[18px] bg-emerald-50 text-[11px] sm:text-[12px] font-bold flex justify-center items-center gap-1.5 whitespace-nowrap shadow-inner border border-emerald-100/50">
+            <div className="px-3 py-1.5 rounded-[18px] bg-emerald-50 text-[11px] sm:text-[12px] font-bold flex justify-center items-center gap-1.5 whitespace-nowrap shadow-inner border border-emerald-100/50 shrink-0 min-w-fit" title={activeRoom.roomId}>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span className="text-emerald-800 tracking-wide">{activeRoom.roomId}</span>
+              <span className="text-emerald-800 tracking-normal font-mono">{activeRoom.roomId}</span>
             </div>
           </div>
         )}
