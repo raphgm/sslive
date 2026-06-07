@@ -31,6 +31,27 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  // Floating reactions queue — fed by participant.lastReactionAt changes
+  const [floatingReactions, setFloatingReactions] = useState<Array<{ id: string; emoji: string; xPct: number; name: string }>>([]);
+  const lastReactionTimestampsRef = React.useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    participants.forEach(p => {
+      const prev = lastReactionTimestampsRef.current[p.id];
+      if (p.lastReactionAt && p.lastReactionEmoji && p.lastReactionAt !== prev) {
+        lastReactionTimestampsRef.current[p.id] = p.lastReactionAt;
+        // Skip first sync — only animate brand-new reactions, not history on load
+        if (prev !== undefined || (Date.now() - new Date(p.lastReactionAt).getTime()) < 8000) {
+          const reactionId = `${p.id}-${p.lastReactionAt}`;
+          const xPct = 70 + Math.random() * 25; // bottom-right column
+          setFloatingReactions(prev => [...prev, { id: reactionId, emoji: p.lastReactionEmoji!, xPct, name: p.name }]);
+          setTimeout(() => {
+            setFloatingReactions(prev => prev.filter(r => r.id !== reactionId));
+          }, 3500);
+        }
+      }
+    });
+  }, [participants]);
   const [loading, setLoading] = useState(true);
 
   // View States
@@ -838,7 +859,29 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
 
   return (
     <div className="min-h-screen bg-neutral-50/60 text-slate-800 font-sans" id="teacher-dashboard-main">
-      
+
+      {/* Floating reactions overlay — students send 👏 🔥 etc. via StudentScreen */}
+      <div className="pointer-events-none fixed inset-0 z-[150] overflow-hidden">
+        <AnimatePresence>
+          {floatingReactions.map(r => (
+            <motion.div
+              key={r.id}
+              initial={{ y: 0, opacity: 0, scale: 0.5 }}
+              animate={{ y: -350, opacity: [0, 1, 1, 0], scale: [0.5, 1.3, 1.1, 0.9] }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 3.2, ease: "easeOut", times: [0, 0.1, 0.7, 1] }}
+              style={{ left: `${r.xPct}%`, bottom: "8%" }}
+              className="absolute flex flex-col items-center"
+            >
+              <span className="text-4xl drop-shadow-md">{r.emoji}</span>
+              <span className="text-[9px] font-mono font-bold text-slate-600 bg-white/80 backdrop-blur-sm rounded-full px-2 py-0.5 mt-0.5 shadow-sm whitespace-nowrap">
+                {r.name}
+              </span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       {/* Socrative-style Unified Upper Navigation Frame */}
       <nav className="bg-white text-slate-800 shadow-3xs border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-2 md:py-0 flex flex-col md:flex-row justify-between items-center gap-3">
