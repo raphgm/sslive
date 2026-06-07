@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
   Rocket, CheckCircle, AlertCircle, ArrowRight, ArrowLeft, User, CircleDot, 
-  HelpCircle, Clock, Award, Compass, Shield, Check, X, Sparkles, Mail, Send
+  HelpCircle, Clock, Award, Compass, Shield, Check, X, Sparkles, Mail, Send,
+  Shuffle, Flame, Lightbulb
 } from "lucide-react";
+import { playSound, generateNicknames, getRandomFact, streakBonus, REACTIONS } from "../lib/gameEnhancements";
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection } from "firebase/firestore";
 import { motion } from "motion/react";
 import confetti from "canvas-confetti";
@@ -22,8 +24,11 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
   // Connection states
   const [roomCode, setRoomCode] = useState(initialRoomCode);
   const [studentName, setStudentName] = useState("");
+  const [nicknameSuggestions, setNicknameSuggestions] = useState<string[]>(() => generateNicknames(3));
   const [selectedTeam, setSelectedTeam] = useState("Blue Nova");
   const [step, setStep] = useState<"enter-room" | "enter-name" | "active-session">("enter-room");
+  const [didYouKnowFact] = useState<string>(() => getRandomFact());
+  const [recentBonus, setRecentBonus] = useState<{ pts: number; streak: number } | null>(null);
 
   // Live Sync states
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
@@ -278,6 +283,21 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
     }
   };
 
+  // Send a reaction emoji — writes to participant doc, teacher dashboard listens
+  const handleSendReaction = async (emoji: string) => {
+    if (!activeRoom || !studentRecord) return;
+    playSound("reaction");
+    try {
+      const ref = doc(db, "rooms", activeRoom.roomId, "participants", studentRecord.id);
+      await updateDoc(ref, {
+        lastReactionEmoji: emoji,
+        lastReactionAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn("Reaction send failed", e);
+    }
+  };
+
   // Student answer submits
   const handleSubmitAnswer = async (selectedAnswer: string) => {
     if (!activeRoom || !studentRecord || isSubmitting) return;
@@ -297,10 +317,27 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
       [currentQIdx]: selectedAnswer
     };
 
-    // Calculate score change
+    // Calculate score change w/ streak bonus
     const isCorrect = String(selectedAnswer).trim().toLowerCase() === String(currentQ.correctAnswer).trim().toLowerCase();
-    const newScore = isCorrect ? studentRecord.score + 1 : studentRecord.score;
+    const prevStreak = studentRecord.currentStreak || 0;
+    const newStreak = isCorrect ? prevStreak + 1 : 0;
+    const bonus = isCorrect ? streakBonus(newStreak) : 0;
+    const pointsEarned = isCorrect ? 1 + bonus : 0;
+    const newScore = studentRecord.score + pointsEarned;
+    const newMaxStreak = Math.max(studentRecord.maxStreak || 0, newStreak);
+    const newStreakBonusTotal = (studentRecord.streakBonus || 0) + bonus;
     const newProgress = Math.max(studentRecord.progress, currentQIdx + 1);
+
+    // Play sound + flash bonus toast
+    if (isCorrect) {
+      playSound(bonus > 0 ? "streak" : "correct");
+      if (bonus > 0) {
+        setRecentBonus({ pts: bonus, streak: newStreak });
+        setTimeout(() => setRecentBonus(null), 2400);
+      }
+    } else {
+      playSound("wrong");
+    }
     
     const isQuizFinished = newProgress >= activeQuizQuestions.length;
 
@@ -312,6 +349,9 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         answers: updatedAnswers,
         score: newScore,
         progress: newProgress,
+        currentStreak: newStreak,
+        maxStreak: newMaxStreak,
+        streakBonus: newStreakBonusTotal,
         completed: !isTeacherPaced && isQuizFinished,
       }).catch((err) => {
         handleFirestoreError(err, OperationType.WRITE, `rooms/${formattedCode}/participants/${studentId}`);
@@ -323,6 +363,9 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         answers: updatedAnswers,
         score: newScore,
         progress: newProgress,
+        currentStreak: newStreak,
+        maxStreak: newMaxStreak,
+        streakBonus: newStreakBonusTotal,
         completed: !isTeacherPaced && isQuizFinished
       } : null);
 
@@ -566,6 +609,55 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         )}
       </header>
 
+      {/* Streak chip + Reactions launcher — only during active quiz */}
+      {step === "active-session" && studentRecord && activeRoom?.activeActivity === "quiz" && (
+        <div className="max-w-md mx-auto w-full px-4 pt-3 flex items-center justify-between gap-2">
+          {/* Streak indicator */}
+          {(studentRecord.currentStreak || 0) >= 2 ? (
+            <motion.div
+              key={studentRecord.currentStreak}
+              initial={{ scale: 0.7, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-orange-100 to-amber-100 border border-orange-200 rounded-full text-[11px] font-bold text-orange-700 shadow-sm"
+            >
+              <Flame size={13} className="text-orange-500" />
+              <span>{studentRecord.currentStreak}x Streak</span>
+            </motion.div>
+          ) : <span />}
+
+          {/* Reactions launcher */}
+          <div className="flex items-center gap-1 px-1.5 py-1 bg-white/70 backdrop-blur border border-slate-200 rounded-full shadow-sm">
+            {REACTIONS.map(emoji => (
+              <button
+                key={emoji}
+                onClick={() => handleSendReaction(emoji)}
+                className="w-7 h-7 flex items-center justify-center text-base hover:scale-125 active:scale-90 transition-transform"
+                title={`React ${emoji}`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Floating streak bonus toast */}
+      {recentBonus && (
+        <motion.div
+          initial={{ y: 30, opacity: 0, scale: 0.8 }}
+          animate={{ y: 0, opacity: 1, scale: 1 }}
+          exit={{ y: -30, opacity: 0 }}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-5 py-3 rounded-2xl text-white font-bold text-sm shadow-2xl flex items-center gap-2.5"
+          style={{ background: "linear-gradient(135deg, #f97316, #ef4444)", boxShadow: "0 20px 50px -10px rgba(239,68,68,0.5)" }}
+        >
+          <Flame size={18} className="text-yellow-200" />
+          <div>
+            <div className="font-black">+{recentBonus.pts} Streak Bonus!</div>
+            <div className="text-[10px] opacity-90 font-mono">{recentBonus.streak} correct in a row</div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Main Container */}
       <main className="max-w-md mx-auto w-full py-8 flex-1 flex flex-col justify-center">
 
@@ -641,6 +733,28 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                   required
                   id="student-name-input"
                 />
+                {/* Nickname suggestions */}
+                <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                  <span className="text-[10px] text-slate-400 font-medium mr-1">Or pick:</span>
+                  {nicknameSuggestions.map(nick => (
+                    <button
+                      key={nick}
+                      type="button"
+                      onClick={() => setStudentName(nick)}
+                      className="px-2.5 py-1 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-full text-[11px] font-medium text-slate-700 hover:text-indigo-700 transition-colors"
+                    >
+                      {nick}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setNicknameSuggestions(generateNicknames(3))}
+                    className="px-2 py-1 text-slate-400 hover:text-slate-700 transition-colors"
+                    title="Shuffle suggestions"
+                  >
+                    <Shuffle size={12} />
+                  </button>
+                </div>
               </div>
 
               {/* SPACE RACE TEAM SELECTION SECTION */}
@@ -877,6 +991,14 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                         <div>
                           <h3 className="font-display text-sm font-semibold text-slate-800">Answer Received!</h3>
                           <p className="text-xs text-slate-400 mt-2">Waiting for teacher pacing parameters to advance to next question...</p>
+                        </div>
+                        {/* Did you know? — keeps players engaged during wait */}
+                        <div className="mt-4 p-3.5 bg-gradient-to-br from-yellow-50 to-amber-50 border border-amber-200/60 rounded-xl text-left flex items-start gap-2.5">
+                          <Lightbulb size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-0.5">Did you know?</p>
+                            <p className="text-xs text-amber-900 leading-relaxed">{didYouKnowFact}</p>
+                          </div>
                         </div>
                       </div>
                     );
