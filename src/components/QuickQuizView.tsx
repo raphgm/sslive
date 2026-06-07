@@ -100,10 +100,16 @@ function QuickQuizShell({
 
 export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
   const [studentName, setStudentName] = useState<string>(() => {
+    // Prefer the skill.sch real name passed via the deep link payload, fallback to the cached nickname.
+    if (payload.studentName && payload.studentName.trim()) {
+      try { localStorage.setItem("sslive_practice_last_student", payload.studentName.trim()); } catch {}
+      return payload.studentName.trim();
+    }
     try { return localStorage.getItem("sslive_practice_last_student") || ""; } catch { return ""; }
   });
   const [nameInput, setNameInput] = useState("");
-  const [started, setStarted] = useState(false);
+  // Auto-start when name is already provided by skill.sch (skip the prompt screen entirely)
+  const [started, setStarted] = useState<boolean>(Boolean(payload.studentName && payload.studentName.trim()));
 
   const [qIdx, setQIdx] = useState(0);
   const [score, setScore] = useState(0);
