@@ -64,6 +64,7 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
   const [selectedQuizId, setSelectedQuizId] = useState<string>("");
   const [dashboardLayoutOption, setDashboardLayoutOption] = useState<"bento" | "tactile-console">("tactile-console");
   const [selectedPacing, setSelectedPacing] = useState<"student-paced-feedback" | "student-paced-nav" | "teacher-paced">("student-paced-feedback");
+  const [teamModeOnLaunch, setTeamModeOnLaunch] = useState(false);
   const [spaceRaceLanesCount, setSpaceRaceLanesCount] = useState<number>(3);
 
   // Copy success indicator
@@ -310,6 +311,7 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
         quickQuestion: null,
         showFeedback: true,
         showResults: true,
+        teamModeEnabled: teamModeOnLaunch,
       }).catch((err) => {
         handleFirestoreError(err, OperationType.WRITE, `rooms/${room.roomId}`);
       });
@@ -2155,6 +2157,28 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
                           </div>
                         </div>
                       )}
+
+                      {/* Team Mode Toggle */}
+                      <div className="flex items-center justify-between bg-white p-3.5 rounded-xl border border-slate-200/60 shadow-3xs">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">🛡️</span>
+                          <div>
+                            <p className="text-[11px] font-bold text-slate-800">Team Mode</p>
+                            <p className="text-[10px] text-slate-400">Players pick a team on join — scores pool per team</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setTeamModeOnLaunch(v => !v)}
+                          className={`w-10 h-5 rounded-full transition-all relative cursor-pointer shrink-0 ${
+                            teamModeOnLaunch ? "bg-indigo-600" : "bg-slate-300"
+                          }`}
+                        >
+                          <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all shadow-sm ${
+                            teamModeOnLaunch ? "right-0.5" : "left-0.5"
+                          }`} />
+                        </button>
+                      </div>
 
                       <div className="pt-2 flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200/60 shadow-3xs">
                         <span className="text-[11px] text-slate-400 flex items-center gap-1 font-medium">
