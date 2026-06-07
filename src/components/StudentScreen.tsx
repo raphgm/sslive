@@ -230,6 +230,19 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
       return;
     }
 
+    // Assignment window gating (Wave 4)
+    if (activeRoom?.assignmentMode) {
+      const now = Date.now();
+      if (activeRoom.assignmentOpenAt && now < new Date(activeRoom.assignmentOpenAt).getTime()) {
+        setConnectionError(`Assignment opens at ${new Date(activeRoom.assignmentOpenAt).toLocaleString()}.`);
+        return;
+      }
+      if (activeRoom.assignmentCloseAt && now > new Date(activeRoom.assignmentCloseAt).getTime()) {
+        setConnectionError(`Assignment closed at ${new Date(activeRoom.assignmentCloseAt).toLocaleString()}.`);
+        return;
+      }
+    }
+
     setConnectionError("");
     setIsSubmitting(true);
 
@@ -649,6 +662,16 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         )}
       </header>
 
+      {/* Assignment window indicator (Wave 4) */}
+      {step === "active-session" && activeRoom?.assignmentMode && activeRoom.assignmentCloseAt && (
+        <div className="max-w-md mx-auto w-full px-4 pt-2">
+          <div className="bg-violet-50/50 border border-violet-200/40 rounded-full px-3 py-1.5 text-[10px] font-mono text-violet-700 flex items-center justify-center gap-1.5">
+            <span>📅</span>
+            <span>Self-paced · open until {new Date(activeRoom.assignmentCloseAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+          </div>
+        </div>
+      )}
+
       {/* Streak chip + Reactions launcher — only during active quiz */}
       {step === "active-session" && studentRecord && activeRoom?.activeActivity === "quiz" && (
         <div className="max-w-md mx-auto w-full px-4 pt-3 flex items-center justify-between gap-2">
@@ -753,6 +776,34 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
               <h2 className="text-lg font-display font-semibold text-slate-905">Register Student</h2>
               <p className="text-xs text-slate-500">Provide your name to participate in meeting activities</p>
             </div>
+
+            {/* Assignment context banner */}
+            {activeRoom.assignmentMode && (() => {
+              const now = Date.now();
+              const openMs = activeRoom.assignmentOpenAt ? new Date(activeRoom.assignmentOpenAt).getTime() : null;
+              const closeMs = activeRoom.assignmentCloseAt ? new Date(activeRoom.assignmentCloseAt).getTime() : null;
+              const status = closeMs && now > closeMs ? "closed" : openMs && now < openMs ? "upcoming" : "open";
+              const styles = {
+                open: "from-emerald-50/60 to-teal-50/40 border-emerald-200/60 text-emerald-800",
+                closed: "from-rose-50/60 to-pink-50/40 border-rose-200/60 text-rose-800",
+                upcoming: "from-amber-50/60 to-orange-50/40 border-amber-200/60 text-amber-800",
+              }[status];
+              return (
+                <div className={`bg-gradient-to-br ${styles} border rounded-xl p-3.5 space-y-1`}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5">
+                    📅 Self-paced Assignment · <span>{status}</span>
+                  </p>
+                  {activeRoom.assignmentTitle && (
+                    <p className="text-sm font-display font-bold leading-tight">{activeRoom.assignmentTitle}</p>
+                  )}
+                  <p className="text-[11px] leading-relaxed">
+                    {status === "open" && closeMs && `Open until ${new Date(closeMs).toLocaleString()}`}
+                    {status === "upcoming" && openMs && `Opens ${new Date(openMs).toLocaleString()}`}
+                    {status === "closed" && closeMs && `Closed at ${new Date(closeMs).toLocaleString()}`}
+                  </p>
+                </div>
+              );
+            })()}
 
             {connectionError && (
               <div className="bg-rose-50 text-rose-700 p-3 rounded-xl text-xs flex items-start gap-2.5 border border-rose-100" id="name-error-display">
