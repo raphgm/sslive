@@ -5,7 +5,7 @@ import {
   Shuffle, Flame, Lightbulb
 } from "lucide-react";
 import { playSound, generateNicknames, getRandomFact, streakBonus, REACTIONS } from "../lib/gameEnhancements";
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, serverTimestamp } from "firebase/firestore";
 import { motion } from "motion/react";
 import confetti from "canvas-confetti";
 
@@ -318,11 +318,23 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
     };
 
     // Calculate score change w/ streak bonus
-    const isCorrect = String(selectedAnswer).trim().toLowerCase() === String(currentQ.correctAnswer).trim().toLowerCase();
+    // Word-cloud has no right answer — participation = +1 pt, doesn't affect streak
+    // Puzzle-order — compare "|"-joined sequence to correctAnswer
+    let isCorrect: boolean;
+    let isParticipation = false;
+    if (currentQ.type === "word-cloud" || currentQ.type === "poll" || currentQ.type === "scale") {
+      isCorrect = false;
+      isParticipation = true;
+    } else if (currentQ.type === "puzzle-order") {
+      const expected = (currentQ.correctAnswer || currentQ.options.join("|")).trim();
+      isCorrect = String(selectedAnswer).trim() === expected;
+    } else {
+      isCorrect = String(selectedAnswer).trim().toLowerCase() === String(currentQ.correctAnswer).trim().toLowerCase();
+    }
     const prevStreak = studentRecord.currentStreak || 0;
-    const newStreak = isCorrect ? prevStreak + 1 : 0;
+    const newStreak = isCorrect ? prevStreak + 1 : isParticipation ? prevStreak : 0;
     const bonus = isCorrect ? streakBonus(newStreak) : 0;
-    const pointsEarned = isCorrect ? 1 + bonus : 0;
+    const pointsEarned = isCorrect ? 1 + bonus : isParticipation ? 1 : 0;
     const newScore = studentRecord.score + pointsEarned;
     const newMaxStreak = Math.max(studentRecord.maxStreak || 0, newStreak);
     const newStreakBonusTotal = (studentRecord.streakBonus || 0) + bonus;
@@ -335,6 +347,8 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         setRecentBonus({ pts: bonus, streak: newStreak });
         setTimeout(() => setRecentBonus(null), 2400);
       }
+    } else if (isParticipation) {
+      playSound("submit");
     } else {
       playSound("wrong");
     }
@@ -1117,6 +1131,45 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                             </button>
                           </form>
                         )}
+
+                        {/* Word Cloud — single word submission, no right answer */}
+                        {activeQuestion.type === "word-cloud" && (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              const input = (e.currentTarget.elements.namedItem("wordCloudText") as HTMLInputElement).value;
+                              const word = input.trim().split(/\s+/)[0]; // first word only
+                              if (word) handleSubmitAnswer(word);
+                            }}
+                            className="space-y-4"
+                          >
+                            <div className="bg-violet-50/50 border border-violet-200/60 rounded-xl px-3 py-2 text-[11px] text-violet-700 flex items-center gap-2">
+                              <span>☁️</span>
+                              <span>Submit one word — duplicates grow larger on the live cloud.</span>
+                            </div>
+                            <input
+                              type="text"
+                              name="wordCloudText"
+                              placeholder="One word..."
+                              maxLength={24}
+                              className="w-full px-4 py-3 border border-violet-200 rounded-2xl focus:border-violet-500 focus:outline-hidden text-sm h-11 text-slate-700"
+                              required
+                              autoComplete="off"
+                            />
+                            <button
+                              type="submit"
+                              className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs rounded-xl transition-colors"
+                            >
+                              Add to Cloud
+                            </button>
+                          </form>
+                        )}
+
+                        {/* Puzzle / Order — re-order with Up/Down buttons */}
+                        {activeQuestion.type === "puzzle-order" && (() => {
+                          // Local state for ordering is encoded as an inline component
+                          return <PuzzleOrderInput question={activeQuestion} onSubmit={handleSubmitAnswer} />;
+                        })()}
                       </div>
 
                     </div>
@@ -1415,6 +1468,72 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         Powered by SSlive | Interactive Meeting Forums
       </footer>
 
+    </div>
+  );
+}
+
+
+// ── PuzzleOrderInput — Re-order steps with up/down buttons ───────────────────
+function PuzzleOrderInput({ question, onSubmit }: { question: Question; onSubmit: (a: string) => void }) {
+  // Shuffle once on mount, then student can reorder via arrows
+  const [items, setItems] = React.useState<string[]>(() => {
+    const opts = [...question.options];
+    for (let i = opts.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [opts[i], opts[j]] = [opts[j], opts[i]];
+    }
+    return opts;
+  });
+
+  const move = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir;
+    if (target < 0 || target >= items.length) return;
+    const next = [...items];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setItems(next);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-amber-50/60 border border-amber-200/60 rounded-xl px-3 py-2 text-[11px] text-amber-700 flex items-center gap-2">
+        <span>🧩</span>
+        <span>Re-order the steps. Use the arrows to move items up or down.</span>
+      </div>
+      <div className="space-y-2">
+        {items.map((item, idx) => (
+          <div key={`${item}-${idx}`} className="flex items-center gap-2 bg-white border border-amber-200 rounded-xl p-2.5 shadow-3xs">
+            <span className="w-6 h-6 rounded-md bg-amber-100 text-amber-700 font-mono font-bold text-[10px] flex items-center justify-center shrink-0">
+              {idx + 1}
+            </span>
+            <span className="flex-1 text-xs text-slate-800 font-medium truncate">{item}</span>
+            <button
+              type="button"
+              onClick={() => move(idx, -1)}
+              disabled={idx === 0}
+              className="p-1.5 rounded-md hover:bg-amber-50 disabled:opacity-30 transition-colors"
+              title="Move up"
+            >
+              <ArrowLeft size={12} className="rotate-90 text-amber-700" />
+            </button>
+            <button
+              type="button"
+              onClick={() => move(idx, 1)}
+              disabled={idx === items.length - 1}
+              className="p-1.5 rounded-md hover:bg-amber-50 disabled:opacity-30 transition-colors"
+              title="Move down"
+            >
+              <ArrowLeft size={12} className="-rotate-90 text-amber-700" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onSubmit(items.join("|"))}
+        className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl transition-colors"
+      >
+        Submit Order
+      </button>
     </div>
   );
 }
