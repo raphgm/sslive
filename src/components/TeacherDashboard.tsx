@@ -65,6 +65,24 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
   const [dashboardLayoutOption, setDashboardLayoutOption] = useState<"bento" | "tactile-console">("tactile-console");
   const [selectedPacing, setSelectedPacing] = useState<"student-paced-feedback" | "student-paced-nav" | "teacher-paced">("student-paced-feedback");
   const [teamModeOnLaunch, setTeamModeOnLaunch] = useState(false);
+  // Assignment mode (Wave 4)
+  const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
+  const [assignmentTitle, setAssignmentTitle] = useState("");
+  const [assignmentOpenAt, setAssignmentOpenAt] = useState<string>(() => {
+    // Default: open now
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
+  const [assignmentCloseAt, setAssignmentCloseAt] = useState<string>(() => {
+    // Default: close in 7 days
+    const future = new Date();
+    future.setDate(future.getDate() + 7);
+    future.setMinutes(future.getMinutes() - future.getTimezoneOffset());
+    return future.toISOString().slice(0, 16);
+  });
+  const [assignmentSchedulingError, setAssignmentSchedulingError] = useState("");
+  const [scheduledAssignmentInfo, setScheduledAssignmentInfo] = useState<{ roomId: string; closeAt: string } | null>(null);
   const [spaceRaceLanesCount, setSpaceRaceLanesCount] = useState<number>(3);
 
   // Copy success indicator
@@ -296,6 +314,48 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
     });
+  };
+
+  // Schedule a self-paced Assignment (Wave 4)
+  const handleScheduleAssignment = async () => {
+    const quizId = selectedQuizId || (quizzes[0]?.id || "");
+    if (!room || !quizId) {
+      setAssignmentSchedulingError("Pick a quiz first.");
+      return;
+    }
+    if (!assignmentTitle.trim()) {
+      setAssignmentSchedulingError("Give the assignment a title so students recognise it.");
+      return;
+    }
+    const openAt = new Date(assignmentOpenAt).toISOString();
+    const closeAt = new Date(assignmentCloseAt).toISOString();
+    if (new Date(closeAt).getTime() <= new Date(openAt).getTime()) {
+      setAssignmentSchedulingError("Close time must be after open time.");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "rooms", room.roomId), {
+        activeActivity: "quiz",
+        activeQuizId: quizId,
+        activeQuestionIndex: 0,
+        pacing: "student-paced-feedback", // assignments are always self-paced
+        quickQuestion: null,
+        showFeedback: true,
+        showResults: true,
+        teamModeEnabled: false,
+        assignmentMode: true,
+        assignmentOpenAt: openAt,
+        assignmentCloseAt: closeAt,
+        assignmentTitle: assignmentTitle.trim(),
+      }).catch((err) => {
+        handleFirestoreError(err, OperationType.WRITE, `rooms/${room.roomId}`);
+      });
+      setScheduledAssignmentInfo({ roomId: room.roomId, closeAt });
+      setAssignmentSchedulingError("");
+    } catch (e) {
+      console.error(e);
+      setAssignmentSchedulingError("Failed to schedule assignment. Try again.");
+    }
   };
 
   // Launch a standard Quiz Activity
@@ -863,6 +923,139 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
     <div className="min-h-screen bg-neutral-50/60 text-slate-800 font-sans" id="teacher-dashboard-main">
 
       {/* Floating reactions overlay — students send 👏 🔥 etc. via StudentScreen */}
+      {/* Assignment scheduling modal (Wave 4) */}
+      {assignmentModalOpen && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setAssignmentModalOpen(false)} />
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+            <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-blue-500" />
+            <div className="p-6">
+              <button
+                onClick={() => setAssignmentModalOpen(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                ✕
+              </button>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+                  📅
+                </div>
+                <div>
+                  <p className="text-[10px] font-mono font-bold text-violet-600 uppercase tracking-widest">Self-Paced</p>
+                  <h3 className="text-lg font-display font-black text-slate-900">Schedule Assignment</h3>
+                </div>
+              </div>
+
+              {scheduledAssignmentInfo ? (
+                /* Success state */
+                <div className="space-y-4">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                    <p className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                      ✅ Assignment scheduled
+                    </p>
+                    <p className="text-[11px] text-emerald-700 mt-1">
+                      Students can join the room from now until{" "}
+                      <strong>{new Date(scheduledAssignmentInfo.closeAt).toLocaleString()}</strong>.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Share with students</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs font-mono text-slate-800 bg-white border border-slate-200 rounded px-2 py-1.5 overflow-x-auto">
+                        {`${window.location.origin}${window.location.pathname}?room=${scheduledAssignmentInfo.roomId}`}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?room=${scheduledAssignmentInfo.roomId}`);
+                        }}
+                        className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded text-[11px] font-bold transition-colors"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2">
+                      Room code: <strong className="font-mono">{scheduledAssignmentInfo.roomId}</strong>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setAssignmentModalOpen(false)}
+                    className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-xl transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : (
+                /* Form state */
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Assignment Title</label>
+                    <input
+                      type="text"
+                      value={assignmentTitle}
+                      onChange={(e) => setAssignmentTitle(e.target.value)}
+                      placeholder="e.g. Chapter 3 Homework"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-violet-500 focus:outline-hidden text-sm text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Quiz</label>
+                    <select
+                      value={selectedQuizId}
+                      onChange={(e) => setSelectedQuizId(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-violet-500 focus:outline-hidden text-sm text-slate-800 bg-white"
+                    >
+                      {quizzes.map(q => <option key={q.id} value={q.id}>{q.title}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Opens</label>
+                      <input
+                        type="datetime-local"
+                        value={assignmentOpenAt}
+                        onChange={(e) => setAssignmentOpenAt(e.target.value)}
+                        className="w-full px-2 py-2 border border-slate-200 rounded-lg focus:border-violet-500 focus:outline-hidden text-xs text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Closes</label>
+                      <input
+                        type="datetime-local"
+                        value={assignmentCloseAt}
+                        onChange={(e) => setAssignmentCloseAt(e.target.value)}
+                        className="w-full px-2 py-2 border border-slate-200 rounded-lg focus:border-violet-500 focus:outline-hidden text-xs text-slate-800"
+                      />
+                    </div>
+                  </div>
+                  <div className="bg-violet-50/60 border border-violet-200/60 rounded-lg px-3 py-2.5 text-[11px] text-violet-700 leading-relaxed">
+                    💡 Students join from this room code and play at their own pace within the window. Results aggregate as they finish.
+                  </div>
+                  {assignmentSchedulingError && (
+                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-2.5 text-xs text-rose-700">
+                      {assignmentSchedulingError}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setAssignmentModalOpen(false)}
+                      className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleScheduleAssignment}
+                      className="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      📅 Schedule
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="pointer-events-none fixed inset-0 z-[150] overflow-hidden">
         <AnimatePresence>
           {floatingReactions.map(r => (
@@ -2185,19 +2378,35 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
                           <Info size={12} className="text-slate-450 shrink-0" />
                           {room && room.activeActivity ? "⚠️ Active session will auto-end" : "👥 Clears student response state"}
                         </span>
-                        <button 
-                          onClick={handleLaunchQuiz}
-                          disabled={quizzes.length === 0}
-                          className={`px-5 py-2.5 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer ${
-                            room && room.activeActivity 
-                              ? "bg-amber-600 hover:bg-amber-700 shadow-amber-100" 
-                              : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100"
-                          }`}
-                          id="launch-quiz-now"
-                        >
-                          {room && room.activeActivity ? <Zap size={14} /> : <Play size={14} />}
-                          {room && room.activeActivity ? "Swap & Launch Quiz" : "Launch Quiz"}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignmentTitle(quizzes.find(q => q.id === selectedQuizId)?.title || quizzes[0]?.title || "");
+                              setAssignmentModalOpen(true);
+                              setAssignmentSchedulingError("");
+                              setScheduledAssignmentInfo(null);
+                            }}
+                            disabled={quizzes.length === 0}
+                            className="px-4 py-2.5 bg-white border border-slate-200 hover:border-violet-300 hover:bg-violet-50/50 text-slate-700 hover:text-violet-700 rounded-xl text-xs font-bold transition-all shadow-3xs flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Schedule a self-paced assignment with an open/close window"
+                          >
+                            📅 Schedule Assignment
+                          </button>
+                          <button 
+                            onClick={handleLaunchQuiz}
+                            disabled={quizzes.length === 0}
+                            className={`px-5 py-2.5 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer ${
+                              room && room.activeActivity 
+                                ? "bg-amber-600 hover:bg-amber-700 shadow-amber-100" 
+                                : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100"
+                            }`}
+                            id="launch-quiz-now"
+                          >
+                            {room && room.activeActivity ? <Zap size={14} /> : <Play size={14} />}
+                            {room && room.activeActivity ? "Swap & Launch Quiz" : "Launch Quiz"}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
