@@ -1,6 +1,6 @@
 export interface Question {
   text: string;
-  type: "multiple-choice" | "true-false" | "short-answer" | "poll" | "scale";
+  type: "multiple-choice" | "true-false" | "short-answer" | "poll" | "scale" | "word-cloud" | "puzzle-order";
   options: string[];
   correctAnswer: string;
   correctOptionIndex: number;
