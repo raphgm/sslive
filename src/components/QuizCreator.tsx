@@ -11,6 +11,8 @@ interface QuizCreatorProps {
   onCancel: () => void;
   existingQuiz?: Quiz | null;
   initialMode?: "manual" | "ai" | "import-paste" | "import-pro" | "import-excel";
+  /** Wave 7: pre-fill the AI topic field — used for skill.sch deep links */
+  initialAiTopic?: string;
 }
 
 const PRESET_TOPICS = [
@@ -20,7 +22,7 @@ const PRESET_TOPICS = [
   { name: "Shakespeare's Hamlet", icon: "🎭" }
 ];
 
-export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMode }: QuizCreatorProps) {
+export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMode, initialAiTopic }: QuizCreatorProps) {
   // Title of the quiz - starts blank or Untitled Quiz if completely new
   const [title, setTitle] = useState(existingQuiz?.title || (existingQuiz ? "" : "Untitled Quiz"));
   
@@ -40,7 +42,7 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
   const [gradeLevel, setGradeLevel] = useState("High School");
 
   // --- SUB-MODE A: AI Generator States (Screenshot 2)
-  const [aiDescribeCover, setAiDescribeCover] = useState("");
+  const [aiDescribeCover, setAiDescribeCover] = useState(initialAiTopic || "");
   const [aiTypesSelected, setAiTypesSelected] = useState<Record<string, boolean>>({
     "multiple-choice": true,
     "true-false": true,
