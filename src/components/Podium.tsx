@@ -4,11 +4,14 @@ import { Trophy, Medal, Crown } from "lucide-react";
 import confetti from "canvas-confetti";
 import { Participant } from "../types";
 import { playSound } from "../lib/gameEnhancements";
+import { computeTeamStandings, TEAM_BY_NAME } from "../lib/teams";
 
 interface PodiumProps {
   participants: Participant[];
   /** Optional subtitle, e.g. quiz title */
   subtitle?: string;
+  /** When true, show team-pooled podium instead of individual */
+  teamMode?: boolean;
 }
 
 const RANKS = [
@@ -17,8 +20,18 @@ const RANKS = [
   { place: 3, height: "h-24", color: "from-orange-400 to-amber-700", text: "text-amber-100", glow: "shadow-orange-500/40", label: "3rd", icon: Medal, ring: "ring-orange-400/40" },
 ];
 
-export default function Podium({ participants, subtitle }: PodiumProps) {
-  const sorted = [...participants].sort((a, b) => b.score - a.score);
+export default function Podium({ participants, subtitle, teamMode = false }: PodiumProps) {
+  // For team mode, derive virtual "participants" from team standings (treat team as a pseudo participant)
+  const teamStandings = teamMode ? computeTeamStandings(participants) : [];
+  const sorted = teamMode
+    ? teamStandings.map(s => ({
+        id: s.team.id,
+        name: `${s.team.emoji} ${s.team.name}`,
+        score: s.score,
+        team: s.team.name,
+        members: s.members,
+      } as any as Participant & { members: number }))
+    : [...participants].sort((a, b) => b.score - a.score);
   const top3 = sorted.slice(0, 3);
 
   // Order for visual layout: 2nd, 1st, 3rd
@@ -70,7 +83,7 @@ export default function Podium({ participants, subtitle }: PodiumProps) {
           <p className="text-[10px] font-mono uppercase tracking-widest text-amber-600 font-bold mb-1">
             ★ Final Standings ★
           </p>
-          <h2 className="text-3xl font-display font-black text-slate-900">Top of the Class</h2>
+          <h2 className="text-3xl font-display font-black text-slate-900">{teamMode ? "Top Teams" : "Top of the Class"}</h2>
           {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
         </motion.div>
 
