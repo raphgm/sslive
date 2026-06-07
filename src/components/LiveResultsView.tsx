@@ -12,6 +12,8 @@ import { Participant, Quiz, Room } from "../types";
 import SpaceRaceView from "./SpaceRaceView";
 import LiveReportView from "./LiveReportView";
 import TeacherDebateConsole from "./TeacherDebateConsole";
+import Podium from "./Podium";
+import { Trophy as TrophyIcon } from "lucide-react";
 
 function InquiryFacilitatorConsole({ participants, type, inquiriesModeEnabled }: { participants: Participant[], type: string, inquiriesModeEnabled: boolean }) {
   const [prompt, setPrompt] = useState<string | null>(null);
@@ -94,9 +96,29 @@ export default function LiveResultsView({
   setCurrentView
 }: LiveResultsViewProps) {
   const currentQuiz = quizzes.find(q => q.id === (room?.activeQuizId || ""));
+  const [showPodium, setShowPodium] = useState(false);
+
+  // Auto-eligibility: quiz exists + on last Q + at least one participant scored
+  const podiumEligible = !!currentQuiz
+    && room?.activeActivity === "quiz"
+    && room.activeQuestionIndex >= (currentQuiz.questions.length - 1)
+    && participants.some(p => p.score > 0);
 
   return (
     <div className="space-y-6 fade-in-up" id="live-results-view-root">
+      {/* Podium overlay — full-screen modal triggered by teacher when quiz wraps */}
+      {showPodium && currentQuiz && (
+        <div className="fixed inset-0 z-[200] bg-gradient-to-br from-slate-50 via-white to-amber-50/30 overflow-y-auto">
+          <button
+            onClick={() => setShowPodium(false)}
+            className="absolute top-5 right-5 z-10 px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-sm transition-colors"
+          >
+            ✕ Close
+          </button>
+          <Podium participants={participants} subtitle={currentQuiz.title} />
+        </div>
+      )}
+
       {room && room.activeActivity ? (
         <div className="space-y-6">
           {/* Banner with state actions */}
@@ -144,6 +166,17 @@ export default function LiveResultsView({
                 </div>
               )}
               
+              {podiumEligible && (
+                <button
+                  type="button"
+                  onClick={() => setShowPodium(true)}
+                  className="w-full md:w-auto px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 hover:opacity-90 text-amber-950 text-xs font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                  title="Show animated podium for top 3"
+                >
+                  <TrophyIcon size={13} /> Show Podium
+                </button>
+              )}
+
               <button 
                 type="button"
                 onClick={handleEndActivity}
