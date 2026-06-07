@@ -5,6 +5,7 @@ import {
   Shuffle, Flame, Lightbulb
 } from "lucide-react";
 import { playSound, generateNicknames, getRandomFact, streakBonus, REACTIONS } from "../lib/gameEnhancements";
+import { TEAMS } from "../lib/teams";
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, serverTimestamp } from "firebase/firestore";
 import { motion } from "motion/react";
 import confetti from "canvas-confetti";
@@ -26,6 +27,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
   const [studentName, setStudentName] = useState("");
   const [nicknameSuggestions, setNicknameSuggestions] = useState<string[]>(() => generateNicknames(3));
   const [selectedTeam, setSelectedTeam] = useState("Blue Nova");
+  const [selectedQuizTeam, setSelectedQuizTeam] = useState<string | null>(null);
   const [step, setStep] = useState<"enter-room" | "enter-name" | "active-session">("enter-room");
   const [didYouKnowFact] = useState<string>(() => getRandomFact());
   const [recentBonus, setRecentBonus] = useState<{ pts: number; streak: number } | null>(null);
@@ -223,6 +225,11 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
       return;
     }
 
+    if (activeRoom?.teamModeEnabled && !selectedQuizTeam) {
+      setConnectionError("Please pick a team to continue!");
+      return;
+    }
+
     setConnectionError("");
     setIsSubmitting(true);
 
@@ -259,7 +266,11 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
       const newParticipant: Participant = {
         id: studentId,
         name: cleanName,
-        team: activeRoom?.activeActivity === "space-race" ? selectedTeam : null,
+        team: activeRoom?.activeActivity === "space-race"
+          ? selectedTeam
+          : activeRoom?.teamModeEnabled
+          ? selectedQuizTeam
+          : null,
         score: 0,
         progress: 0,
         answers: {},
@@ -787,6 +798,38 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                     <option value="Peach Solar">Peach Solar</option>
                     <option value="Daffodil Ray">Daffodil Ray</option>
                   </select>
+                </div>
+              )}
+
+              {/* TEAM MODE PICKER (quiz) */}
+              {activeRoom.teamModeEnabled && activeRoom.activeActivity !== "space-race" && (
+                <div className="p-4 bg-gradient-to-br from-indigo-50/40 to-violet-50/30 border border-indigo-200/40 rounded-xl">
+                  <label className="block text-[10px] font-bold text-indigo-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                    🛡️ Choose Your Team
+                  </label>
+                  <p className="text-[10px] text-slate-500 mb-3">Your score will pool with teammates.</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {TEAMS.map(team => {
+                      const selected = selectedQuizTeam === team.name;
+                      return (
+                        <button
+                          key={team.id}
+                          type="button"
+                          onClick={() => setSelectedQuizTeam(team.name)}
+                          className={`p-2.5 rounded-xl border-2 transition-all flex flex-col items-center gap-1 active:scale-95 ${
+                            selected
+                              ? `${team.bg} ${team.border} ring-2 ${team.ring} ring-offset-1 shadow-sm`
+                              : "bg-white border-slate-200 hover:border-slate-300"
+                          }`}
+                        >
+                          <span className="text-xl leading-none">{team.emoji}</span>
+                          <span className={`text-[10px] font-bold leading-tight text-center ${selected ? team.textColor : "text-slate-600"}`}>
+                            {team.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -1465,7 +1508,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
 
       {/* SSlive Wisdom Footer */}
       <footer className="max-w-md mx-auto w-full pb-4 text-center text-[10px] font-sans text-slate-400 tracking-wide">
-        Powered by SSlive | Interactive Meeting Forums
+        Powered by SKILL.SCH | Interactive Meeting Forums
       </footer>
 
     </div>
