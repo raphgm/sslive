@@ -5,6 +5,7 @@ import {
   Cloud, Layers, ChevronUp, ChevronDown
 } from "lucide-react";
 import { Question, Quiz } from "../types";
+import { generateQuizWithGroq, isGroqConfigured } from "../lib/groqAi";
 
 interface QuizCreatorProps {
   onSave: (quiz: Partial<Quiz>) => Promise<void>;
@@ -238,35 +239,32 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
     setAiError("");
 
     try {
-      const res = await fetch("/api/quizzes/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: promptPayload,
-          gradeLevel: gradeLevel,
-          questionCount: sizeLabel,
-          quizType: `SSlive Advanced Workspace Input [${aiSubMode}]`
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json();
-        throw new Error(errJson.error || "Failed to compile questions via SSlive Brain.");
+      if (!isGroqConfigured()) {
+        throw new Error("AI is not configured. Ask the admin to set VITE_GROQ_API_KEY (a free key — get one at console.groq.com).");
       }
-
-      const data = await res.json();
-      if (data && data.questions) {
-        // Formulate standard title if none written
+      const data = await generateQuizWithGroq({
+        topic: promptPayload,
+        gradeLevel,
+        questionCount: sizeLabel,
+        quizStyle: `SSlive Advanced Workspace Input [${aiSubMode}]`,
+        enabledTypes: {
+          multipleChoice: aiTypesSelected["multiple-choice"],
+          trueFalse:      aiTypesSelected["true-false"],
+          shortAnswer:    aiTypesSelected["short-answer"],
+        },
+        companionText: draggedContent || pasteBuffer,
+      });
+      if (data?.questions?.length) {
         if (!title || title === "Untitled Quiz") {
-          setTitle(data.title || "SSlive Custom Prompt Quiz");
+          setTitle(data.title || "AI Generated Quiz");
         }
         setQuestions([...questions, ...data.questions]);
       } else {
-        throw new Error("Peculiar format returned from AI integration.");
+        throw new Error("AI returned an empty quiz. Please refine the topic and retry.");
       }
     } catch (err: any) {
-      console.error(err);
-      setAiError(err.message || "An unexpected error blocked AI integration from completing. Let's retry.");
+      console.error("AI generation error:", err);
+      setAiError(err.message || "An unexpected error blocked AI integration. Let's retry.");
     } finally {
       setIsGenerating(false);
     }
@@ -320,7 +318,7 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
     runServerAiGeneration(promptText, 5);
   };
 
-  // Trigger for Sub-Mode 3: Document Extract PRO
+  // Trigger for Sub-Mode 3: Document Extract PRO — now powered by client-side Groq
   const handleExtractProDoc = async () => {
     if (!proDocContent && !proDocPrompt) {
       setAiError("Please drop a file or specify the core query filters first.");
@@ -331,31 +329,28 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
     setAiError("");
 
     try {
-      const res = await fetch("/api/quizzes/extract-document", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          textContent: proDocContent || proDocPrompt,
-          limit: aiQuestionsCount
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json();
-        throw new Error(errJson.error || "Failed to extract questions from document.");
+      if (!isGroqConfigured()) {
+        throw new Error("AI is not configured. Ask the admin to set VITE_GROQ_API_KEY (a free key — get one at console.groq.com).");
       }
-
-      const data = await res.json();
-      if (data && data.questions) {
+      const source = (proDocContent || proDocPrompt || "").slice(0, 8000);
+      const data = await generateQuizWithGroq({
+        topic: `Extract questions from this document. Focus on the main concepts a teacher would assess: ${source.slice(0, 300)}`,
+        gradeLevel,
+        questionCount: aiQuestionsCount,
+        quizStyle: "Document extraction PRO",
+        enabledTypes: { multipleChoice: true, trueFalse: true, shortAnswer: true },
+        companionText: source,
+      });
+      if (data?.questions?.length) {
         if (!title || title === "Untitled Quiz") {
           setTitle(data.title || "Document Extraction Quiz");
         }
         setQuestions([...questions, ...data.questions]);
       } else {
-        throw new Error("Peculiar format returned from ai integration.");
+        throw new Error("Could not extract questions from that document. Try a clearer source.");
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("Doc extract error:", err);
       setAiError(err.message || "An unexpected error blocked Document Extraction.");
     } finally {
       setIsGenerating(false);
