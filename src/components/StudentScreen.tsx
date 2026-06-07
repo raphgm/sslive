@@ -621,7 +621,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         </div>
 
         {step === "active-session" && activeRoom && studentRecord && (
-          <div className="flex items-center bg-white/60 backdrop-blur-xl p-1.5 rounded-[24px] border border-slate-200/60 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] gap-1 shrink-0 ml-4 max-w-full sm:max-w-[440px]">
+          <div className="flex items-center bg-white/60 backdrop-blur-xl p-1.5 rounded-[24px] border border-slate-200/60 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] gap-1 ml-4 w-fit min-w-0">
             <button
               onClick={handleToggleNeedHelp}
               className={`group px-3 py-1.5 rounded-[18px] text-[11px] sm:text-[12px] font-bold flex items-center justify-center gap-1.5 transition-all duration-300 cursor-pointer flex-1 w-24 relative overflow-hidden ${
