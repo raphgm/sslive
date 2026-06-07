@@ -74,6 +74,10 @@ export default function RoomsView({
       setRoomCodeError("Room Code must be at least 3 alphanumeric characters.");
       return;
     }
+    if (!teacherUid) {
+      setRoomCodeError("User authentication failed. Please sign out and sign back in.");
+      return;
+    }
     setIsCreatingRoom(true);
     setRoomCodeError("");
     try {
@@ -100,8 +104,15 @@ export default function RoomsView({
       setShowRoomCodeModal(false);
       setRoomCodeInput("");
     } catch (e) {
-      console.error(e);
-      setRoomCodeError("Failed to create room. Please try again.");
+      console.error("Room creation error:", e);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      if (errMsg.includes("permission")) {
+        setRoomCodeError("Permission denied. You may not be signed in properly. Try signing out and signing back in.");
+      } else if (errMsg.includes("not-found")) {
+        setRoomCodeError("Firestore database not accessible. Please contact support.");
+      } else {
+        setRoomCodeError("Failed to create room. " + (errMsg ? "(" + errMsg.substring(0, 40) + ")" : "Please try again."));
+      }
     } finally {
       setIsCreatingRoom(false);
     }
