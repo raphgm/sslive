@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState } from "react";
 import { ArrowLeft, Check, X, Trophy, Flame, Zap, Lightbulb, RotateCcw } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import confetti from "canvas-confetti";
 import { Question } from "../types";
 import { playSound, streakBonus, getRandomFact } from "../lib/gameEnhancements";
 import { addWrongAnswers } from "../lib/practice";
+import { Doodles } from "./Doodles";
 
 export interface QuickQuizPayload {
   title: string;
@@ -15,6 +16,78 @@ export interface QuickQuizPayload {
 interface QuickQuizViewProps {
   payload: QuickQuizPayload;
   onExit: () => void;
+}
+
+// ── Shell: matches StudentScreen — Doodles bg, animated 3-circle logo header, footer ──
+function QuickQuizShell({
+  children,
+  onExit,
+  rightChip,
+}: {
+  children: React.ReactNode;
+  onExit: () => void;
+  rightChip?: React.ReactNode;
+}) {
+  return (
+    <div className="min-h-screen bg-[#fafafa] flex flex-col justify-between p-4 md:p-6 font-sans text-slate-800 relative z-0">
+      <Doodles />
+
+      {/* Top logo header — mirrors StudentScreen */}
+      <header className="max-w-[600px] mx-auto w-full pt-6 flex justify-between items-center bg-transparent gap-4 relative z-10">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onExit}
+            className="px-2.5 py-1.5 text-[11px] text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-50 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 shadow-sm font-semibold mr-1"
+            title="Return to Home Screen"
+            type="button"
+          >
+            <ArrowLeft size={12} className="text-slate-400" />
+            <span>Home</span>
+          </button>
+
+          <div className="flex items-center gap-2 select-none touch-none ml-1">
+            <div className="relative w-8 h-8 flex items-center justify-center overflow-visible">
+              <motion.div
+                className="absolute w-[14px] h-[14px] rounded-full bg-[#fbbf24] opacity-90 shadow-[0_1px_3px_rgba(251,191,36,0.3)]"
+                animate={{ x: [0, -5, -5, 0], y: [0, -4, -4, 0], scale: [1, 1.05, 1.05, 1] }}
+                transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut", times: [0, 0.35, 0.65, 1] }}
+              />
+              <motion.div
+                className="absolute w-[14px] h-[14px] rounded-full bg-[#10b981] opacity-90 shadow-[0_1px_3px_rgba(16,185,129,0.3)]"
+                animate={{ x: [0, 5, 5, 0], y: [0, -4, -4, 0], scale: [1, 1.05, 1.05, 1] }}
+                transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut", times: [0, 0.35, 0.65, 1], delay: 0.1 }}
+              />
+              <motion.div
+                className="absolute w-[14px] h-[14px] rounded-full bg-[#6366f1] opacity-90 shadow-[0_1px_3px_rgba(99,102,241,0.3)]"
+                animate={{ x: [0, 0, 0, 0], y: [0, 5, 5, 0], scale: [1, 1.05, 1.05, 1] }}
+                transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut", times: [0, 0.35, 0.65, 1], delay: 0.2 }}
+              />
+            </div>
+            <div className="flex items-center gap-1 text-[15px] sm:text-[17px] font-display font-bold tracking-tight text-slate-800 leading-[1.15] ml-1">
+              <span>SSlive</span>
+              <span>Student</span>
+            </div>
+          </div>
+        </div>
+
+        {rightChip && (
+          <div className="flex items-center bg-white/70 backdrop-blur-xl px-3 py-1.5 rounded-full border border-slate-200/60 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] gap-1.5 ml-4 w-fit min-w-0">
+            {rightChip}
+          </div>
+        )}
+      </header>
+
+      {/* Main content area */}
+      <main className="max-w-md mx-auto w-full py-8 flex-1 flex flex-col justify-center relative z-10">
+        {children}
+      </main>
+
+      {/* SSlive Wisdom Footer */}
+      <footer className="max-w-md mx-auto w-full pb-4 text-center text-[10px] font-sans text-slate-400 tracking-wide relative z-10">
+        Powered by SKILL.SCH | Interactive Meeting Forums
+      </footer>
+    </div>
+  );
 }
 
 export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
@@ -86,32 +159,52 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
       } catch {}
       setCompleted(true);
       playSound("podium");
-      const burst = (x: number) => confetti({ particleCount: 60, spread: 70, origin: { x, y: 0.6 }, colors: ["#fbbf24", "#f59e0b", "#fcd34d", "#fb923c"] });
+      // Confetti! 🎉
+      const burst = (x: number) => confetti({
+        particleCount: 80,
+        spread: 75,
+        origin: { x, y: 0.6 },
+        colors: ["#fbbf24", "#f59e0b", "#fcd34d", "#fb923c", "#a78bfa", "#60a5fa"],
+        scalar: 1.05,
+      });
       burst(0.2);
       burst(0.8);
+      // Recurring smaller bursts for 5s
+      const repeat = setInterval(() => burst(Math.random()), 1100);
+      setTimeout(() => clearInterval(repeat), 5000);
     }
   };
 
   // ─── Name prompt ──────────────────────────────────────────────────────────
   if (!studentName || !started) {
     return (
-      <div className="min-h-screen bg-neutral-50/60 text-slate-800 font-sans flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white p-6 md:p-8 rounded-2xl border border-slate-200/80 shadow-3xs space-y-5">
-          <button onClick={onExit} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors">
-            <ArrowLeft size={13} /> Back
-          </button>
+      <QuickQuizShell
+        onExit={onExit}
+        rightChip={
+          <>
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+            <span className="text-amber-800 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider">From skill.sch</span>
+          </>
+        }
+      >
+        <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200/80 shadow-3xs space-y-5">
           <div className="text-center space-y-2">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white mx-auto flex items-center justify-center shadow-sm text-xl">
               🚀
             </div>
-            <p className="text-[10px] font-mono uppercase tracking-widest text-amber-600 font-bold">From skill.sch</p>
             <h2 className="text-lg font-display font-black text-slate-900 leading-tight">{payload.title}</h2>
             {payload.course && <p className="text-xs text-slate-500">{payload.course}</p>}
             <p className="text-[11px] text-slate-500 mt-2">
               {total} questions · streak bonuses · wrong answers saved for practice
             </p>
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); const v = nameInput.trim() || studentName; if (v) { setStudentName(v); setStarted(true); } }}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const v = nameInput.trim() || studentName;
+              if (v) { setStudentName(v); setStarted(true); }
+            }}
+          >
             {!studentName && (
               <input
                 type="text"
@@ -136,7 +229,7 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
             </button>
           </form>
         </div>
-      </div>
+      </QuickQuizShell>
     );
   }
 
@@ -145,11 +238,19 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
     const correctCount = total - wrongQs.length;
     const pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50/40 via-white to-orange-50/40 flex items-center justify-center p-4">
+      <QuickQuizShell
+        onExit={onExit}
+        rightChip={
+          <>
+            <Trophy size={11} className="text-amber-500 shrink-0" />
+            <span className="text-amber-700 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider">Complete</span>
+          </>
+        }
+      >
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md bg-white p-6 md:p-8 rounded-2xl border border-slate-200/80 shadow-xl space-y-5 text-center"
+          className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200/80 shadow-3xs space-y-5 text-center"
         >
           <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-white mx-auto flex items-center justify-center shadow-lg shadow-amber-500/30">
             <Trophy size={28} />
@@ -200,35 +301,37 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
             </button>
           </div>
         </motion.div>
-      </div>
+      </QuickQuizShell>
     );
   }
 
   // ─── Active quiz screen ──────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-neutral-50/60 text-slate-800 font-sans">
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
-          <button onClick={onExit} className="text-xs text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-1.5">
-            <ArrowLeft size={13} /> Exit
-          </button>
-          <span className="text-[11px] font-mono text-slate-500 truncate max-w-[160px]">{payload.title}</span>
-          <span className="text-[11px] font-mono text-amber-600 font-bold">
-            <Zap size={11} className="inline mr-0.5" />{score}
-          </span>
-        </div>
-        <div className="w-full h-1 bg-slate-100">
-          <div
-            className="h-full bg-gradient-to-r from-amber-500 to-orange-600 transition-all duration-300"
-            style={{ width: `${((qIdx + (feedback ? 1 : 0)) / total) * 100}%` }}
+    <QuickQuizShell
+      onExit={onExit}
+      rightChip={
+        <>
+          <Zap size={11} className="text-amber-500 shrink-0" />
+          <span className="text-slate-700 text-[10px] sm:text-[11px] font-bold font-mono">{score} pts</span>
+          <span className="text-slate-300">·</span>
+          <span className="text-slate-500 text-[10px] sm:text-[11px] font-mono">Q {qIdx + 1}/{total}</span>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        {/* Progress bar */}
+        <div className="w-full h-1 bg-slate-200/70 rounded-full overflow-hidden">
+          <motion.div
+            initial={false}
+            animate={{ width: `${((qIdx + (feedback ? 1 : 0)) / total) * 100}%` }}
+            transition={{ duration: 0.3 }}
+            className="h-full bg-gradient-to-r from-amber-500 to-orange-600 rounded-full"
           />
         </div>
-      </header>
 
-      <main className="max-w-md mx-auto p-4 py-6 space-y-5">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">
-            Q {qIdx + 1} / {total}
+            From: {payload.title}
           </span>
           {streak >= 2 && (
             <motion.span
@@ -316,7 +419,7 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
             </motion.div>
           )}
         </AnimatePresence>
-      </main>
+      </div>
 
       {bonusPop && (
         <motion.div
@@ -333,6 +436,6 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
           </div>
         </motion.div>
       )}
-    </div>
+    </QuickQuizShell>
   );
 }
