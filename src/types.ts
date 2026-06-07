@@ -1,6 +1,6 @@
 export interface Question {
   text: string;
-  type: "multiple-choice" | "true-false" | "short-answer" | "poll" | "scale";
+  type: "multiple-choice" | "true-false" | "short-answer" | "poll" | "scale" | "word-cloud" | "puzzle-order";
   options: string[];
   correctAnswer: string;
   correctOptionIndex: number;
@@ -60,6 +60,22 @@ export interface Room {
   maieuticDialogueEnabled?: boolean;
   allowedRoster?: string[];
   rosterEnabled?: boolean;
+  /** Team mode: players choose a team on join; scores pool per team */
+  teamModeEnabled?: boolean;
+  /** Self-paced assignment mode: room stays open in a window for async homework */
+  assignmentMode?: boolean;
+  /** ISO timestamp: assignment opens (students can join from this moment) */
+  assignmentOpenAt?: string;
+  /** ISO timestamp: assignment closes (students cannot submit after) */
+  assignmentCloseAt?: string;
+  /** Assignment title shown to students */
+  assignmentTitle?: string;
+  /** Challenge mode: viral async game, anyone can join via share link, leaderboard accumulates */
+  challengeMode?: boolean;
+  /** Display name of who created the challenge (for the banner) */
+  challengeCreatorName?: string;
+  /** Optional title for the challenge */
+  challengeTitle?: string;
   createdAt: any;
 }
 

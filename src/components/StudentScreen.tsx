@@ -5,7 +5,9 @@ import {
   Shuffle, Flame, Lightbulb
 } from "lucide-react";
 import { playSound, generateNicknames, getRandomFact, streakBonus, REACTIONS } from "../lib/gameEnhancements";
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection } from "firebase/firestore";
+import { TEAMS } from "../lib/teams";
+import { addWrongAnswers } from "../lib/practice";
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, serverTimestamp } from "firebase/firestore";
 import { motion } from "motion/react";
 import confetti from "canvas-confetti";
 
@@ -26,6 +28,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
   const [studentName, setStudentName] = useState("");
   const [nicknameSuggestions, setNicknameSuggestions] = useState<string[]>(() => generateNicknames(3));
   const [selectedTeam, setSelectedTeam] = useState("Blue Nova");
+  const [selectedQuizTeam, setSelectedQuizTeam] = useState<string | null>(null);
   const [step, setStep] = useState<"enter-room" | "enter-name" | "active-session">("enter-room");
   const [didYouKnowFact] = useState<string>(() => getRandomFact());
   const [recentBonus, setRecentBonus] = useState<{ pts: number; streak: number } | null>(null);
@@ -223,6 +226,24 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
       return;
     }
 
+    if (activeRoom?.teamModeEnabled && !selectedQuizTeam) {
+      setConnectionError("Please pick a team to continue!");
+      return;
+    }
+
+    // Assignment window gating (Wave 4)
+    if (activeRoom?.assignmentMode) {
+      const now = Date.now();
+      if (activeRoom.assignmentOpenAt && now < new Date(activeRoom.assignmentOpenAt).getTime()) {
+        setConnectionError(`Assignment opens at ${new Date(activeRoom.assignmentOpenAt).toLocaleString()}.`);
+        return;
+      }
+      if (activeRoom.assignmentCloseAt && now > new Date(activeRoom.assignmentCloseAt).getTime()) {
+        setConnectionError(`Assignment closed at ${new Date(activeRoom.assignmentCloseAt).toLocaleString()}.`);
+        return;
+      }
+    }
+
     setConnectionError("");
     setIsSubmitting(true);
 
@@ -259,7 +280,11 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
       const newParticipant: Participant = {
         id: studentId,
         name: cleanName,
-        team: activeRoom?.activeActivity === "space-race" ? selectedTeam : null,
+        team: activeRoom?.activeActivity === "space-race"
+          ? selectedTeam
+          : activeRoom?.teamModeEnabled
+          ? selectedQuizTeam
+          : null,
         score: 0,
         progress: 0,
         answers: {},
@@ -318,11 +343,38 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
     };
 
     // Calculate score change w/ streak bonus
-    const isCorrect = String(selectedAnswer).trim().toLowerCase() === String(currentQ.correctAnswer).trim().toLowerCase();
+    // Word-cloud has no right answer — participation = +1 pt, doesn't affect streak
+    // Puzzle-order — compare "|"-joined sequence to correctAnswer
+    let isCorrect: boolean;
+    let isParticipation = false;
+    if (currentQ.type === "word-cloud" || currentQ.type === "poll" || currentQ.type === "scale") {
+      isCorrect = false;
+      isParticipation = true;
+    } else if (currentQ.type === "puzzle-order") {
+      const expected = (currentQ.correctAnswer || currentQ.options.join("|")).trim();
+      isCorrect = String(selectedAnswer).trim() === expected;
+    } else if (currentQ.type === "multiple-choice") {
+      // Match by OPTION INDEX — students submit full option text ("B. Platform as a Service")
+      // but correctAnswer is often just the letter ("B"). Index is the source of truth.
+      const submittedIdx = currentQ.options.findIndex(o => o === selectedAnswer);
+      if (submittedIdx !== -1 && typeof currentQ.correctOptionIndex === "number" && currentQ.correctOptionIndex >= 0) {
+        isCorrect = submittedIdx === currentQ.correctOptionIndex;
+      } else {
+        // Fallbacks for legacy data where correctAnswer is the option letter or full text
+        const submitted = String(selectedAnswer).trim().toLowerCase();
+        const expected = String(currentQ.correctAnswer || "").trim().toLowerCase();
+        // Strip "A. " / "B) " etc prefix for letter-only matches
+        const letterMatch = submitted.match(/^([a-z])[\.\)]/);
+        const letter = letterMatch ? letterMatch[1] : null;
+        isCorrect = submitted === expected || (letter !== null && letter === expected);
+      }
+    } else {
+      isCorrect = String(selectedAnswer).trim().toLowerCase() === String(currentQ.correctAnswer).trim().toLowerCase();
+    }
     const prevStreak = studentRecord.currentStreak || 0;
-    const newStreak = isCorrect ? prevStreak + 1 : 0;
+    const newStreak = isCorrect ? prevStreak + 1 : isParticipation ? prevStreak : 0;
     const bonus = isCorrect ? streakBonus(newStreak) : 0;
-    const pointsEarned = isCorrect ? 1 + bonus : 0;
+    const pointsEarned = isCorrect ? 1 + bonus : isParticipation ? 1 : 0;
     const newScore = studentRecord.score + pointsEarned;
     const newMaxStreak = Math.max(studentRecord.maxStreak || 0, newStreak);
     const newStreakBonusTotal = (studentRecord.streakBonus || 0) + bonus;
@@ -335,6 +387,8 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         setRecentBonus({ pts: bonus, streak: newStreak });
         setTimeout(() => setRecentBonus(null), 2400);
       }
+    } else if (isParticipation) {
+      playSound("submit");
     } else {
       playSound("wrong");
     }
@@ -368,6 +422,20 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         streakBonus: newStreakBonusTotal,
         completed: !isTeacherPaced && isQuizFinished
       } : null);
+
+      // Wave 6: push wrong answer to practice deck for spaced repetition
+      if (!isCorrect && !isParticipation && activeRoom.activeActivity === "quiz" && activeRoom.activeQuizId) {
+        try {
+          addWrongAnswers(
+            studentRecord.name,
+            activeRoom.activeQuizId,
+            "Live Quiz",
+            [{ questionIndex: currentQIdx, question: currentQ }],
+          );
+        } catch (e) {
+          console.warn("Failed to add to practice deck", e);
+        }
+      }
 
       // Handle student Paced Immediate Feedback display pops!
       if (!isTeacherPaced && activeRoom.showFeedback && activeRoom.activeActivity === "quiz") {
@@ -568,7 +636,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
         </div>
 
         {step === "active-session" && activeRoom && studentRecord && (
-          <div className="flex items-center bg-white/60 backdrop-blur-xl p-1.5 rounded-[24px] border border-slate-200/60 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] gap-1 shrink-0 ml-4 max-w-[280px]">
+          <div className="flex items-center bg-white/60 backdrop-blur-xl p-1.5 rounded-[24px] border border-slate-200/60 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] gap-1 ml-4 w-fit min-w-0">
             <button
               onClick={handleToggleNeedHelp}
               className={`group px-3 py-1.5 rounded-[18px] text-[11px] sm:text-[12px] font-bold flex items-center justify-center gap-1.5 transition-all duration-300 cursor-pointer flex-1 w-24 relative overflow-hidden ${
@@ -601,13 +669,23 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
             
             <div className="w-[1px] h-6 bg-slate-200/80 mx-0.5 shrink-0" />
             
-            <div className="flex-1 w-24 px-3 py-1.5 rounded-[18px] bg-emerald-50 text-[11px] sm:text-[12px] font-bold flex justify-center items-center gap-1.5 whitespace-nowrap shadow-inner border border-emerald-100/50">
+            <div className="px-3 py-1.5 rounded-[18px] bg-emerald-50 text-[11px] sm:text-[12px] font-bold flex justify-center items-center gap-1.5 whitespace-nowrap shadow-inner border border-emerald-100/50 shrink-0 min-w-fit" title={activeRoom.roomId}>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span className="text-emerald-800 tracking-wide">{activeRoom.roomId}</span>
+              <span className="text-emerald-800 tracking-normal font-mono">{activeRoom.roomId}</span>
             </div>
           </div>
         )}
       </header>
+
+      {/* Assignment window indicator (Wave 4) */}
+      {step === "active-session" && activeRoom?.assignmentMode && activeRoom.assignmentCloseAt && (
+        <div className="max-w-md mx-auto w-full px-4 pt-2">
+          <div className="bg-violet-50/50 border border-violet-200/40 rounded-full px-3 py-1.5 text-[10px] font-mono text-violet-700 flex items-center justify-center gap-1.5">
+            <span>📅</span>
+            <span>Self-paced · open until {new Date(activeRoom.assignmentCloseAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+          </div>
+        </div>
+      )}
 
       {/* Streak chip + Reactions launcher — only during active quiz */}
       {step === "active-session" && studentRecord && activeRoom?.activeActivity === "quiz" && (
@@ -714,6 +792,65 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
               <p className="text-xs text-slate-500">Provide your name to participate in meeting activities</p>
             </div>
 
+            {/* Challenge banner (Wave 5) */}
+            {activeRoom.challengeMode && (() => {
+              // Live leaderboard preview
+              const sorted = [...allParticipants].sort((a, b) => b.score - a.score);
+              const topScore = sorted[0]?.score || 0;
+              const topName = sorted[0]?.name;
+              return (
+                <div className="bg-gradient-to-br from-pink-50/60 via-orange-50/40 to-amber-50/30 border border-pink-200/60 rounded-xl p-4 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-pink-700 flex items-center gap-1.5">
+                    🚀 Challenge {activeRoom.challengeCreatorName && `from ${activeRoom.challengeCreatorName}`}
+                  </p>
+                  {activeRoom.challengeTitle && (
+                    <p className="text-base font-display font-black text-slate-900 leading-tight">{activeRoom.challengeTitle}</p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="bg-white/70 rounded-lg p-2 text-center">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Players</p>
+                      <p className="text-base font-mono font-black text-slate-900">{allParticipants.length}</p>
+                    </div>
+                    <div className="bg-white/70 rounded-lg p-2 text-center">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Top Score</p>
+                      <p className="text-base font-mono font-black text-pink-700">{topScore}{topName ? ` · ${topName}` : ""}</p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    🔥 Beat the top score and share with your friends to keep the streak going.
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* Assignment context banner */}
+            {activeRoom.assignmentMode && (() => {
+              const now = Date.now();
+              const openMs = activeRoom.assignmentOpenAt ? new Date(activeRoom.assignmentOpenAt).getTime() : null;
+              const closeMs = activeRoom.assignmentCloseAt ? new Date(activeRoom.assignmentCloseAt).getTime() : null;
+              const status = closeMs && now > closeMs ? "closed" : openMs && now < openMs ? "upcoming" : "open";
+              const styles = {
+                open: "from-emerald-50/60 to-teal-50/40 border-emerald-200/60 text-emerald-800",
+                closed: "from-rose-50/60 to-pink-50/40 border-rose-200/60 text-rose-800",
+                upcoming: "from-amber-50/60 to-orange-50/40 border-amber-200/60 text-amber-800",
+              }[status];
+              return (
+                <div className={`bg-gradient-to-br ${styles} border rounded-xl p-3.5 space-y-1`}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5">
+                    📅 Self-paced Assignment · <span>{status}</span>
+                  </p>
+                  {activeRoom.assignmentTitle && (
+                    <p className="text-sm font-display font-bold leading-tight">{activeRoom.assignmentTitle}</p>
+                  )}
+                  <p className="text-[11px] leading-relaxed">
+                    {status === "open" && closeMs && `Open until ${new Date(closeMs).toLocaleString()}`}
+                    {status === "upcoming" && openMs && `Opens ${new Date(openMs).toLocaleString()}`}
+                    {status === "closed" && closeMs && `Closed at ${new Date(closeMs).toLocaleString()}`}
+                  </p>
+                </div>
+              );
+            })()}
+
             {connectionError && (
               <div className="bg-rose-50 text-rose-700 p-3 rounded-xl text-xs flex items-start gap-2.5 border border-rose-100" id="name-error-display">
                 <AlertCircle size={15} className="text-rose-500 shrink-0 mt-0.5" />
@@ -775,6 +912,38 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                   </select>
                 </div>
               )}
+
+              {/* TEAM MODE PICKER (quiz) */}
+              {activeRoom.teamModeEnabled && activeRoom.activeActivity !== "space-race" && (
+                <div className="p-4 bg-gradient-to-br from-indigo-50/40 to-violet-50/30 border border-indigo-200/40 rounded-xl">
+                  <label className="block text-[10px] font-bold text-indigo-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                    🛡️ Choose Your Team
+                  </label>
+                  <p className="text-[10px] text-slate-500 mb-3">Your score will pool with teammates.</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {TEAMS.map(team => {
+                      const selected = selectedQuizTeam === team.name;
+                      return (
+                        <button
+                          key={team.id}
+                          type="button"
+                          onClick={() => setSelectedQuizTeam(team.name)}
+                          className={`p-2.5 rounded-xl border-2 transition-all flex flex-col items-center gap-1 active:scale-95 ${
+                            selected
+                              ? `${team.bg} ${team.border} ring-2 ${team.ring} ring-offset-1 shadow-sm`
+                              : "bg-white border-slate-200 hover:border-slate-300"
+                          }`}
+                        >
+                          <span className="text-xl leading-none">{team.emoji}</span>
+                          <span className={`text-[10px] font-bold leading-tight text-center ${selected ? team.textColor : "text-slate-600"}`}>
+                            {team.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <button 
@@ -834,7 +1003,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                               type="submit"
                               className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
                             >
-                              <Send size={12} /> Send Report
+                              <Send size={12} /> Request Report
                             </button>
                           </div>
                         </div>
@@ -868,6 +1037,46 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                           <h3 className="font-display text-base font-semibold text-slate-800">Quiz Completed!</h3>
                           <p className="text-xs text-slate-400 mt-1">Excellent job submitting your answers. Results are synced live with the teacher dashboard.</p>
                         </div>
+
+                        {/* Challenge share-back (Wave 5) */}
+                        {activeRoom?.challengeMode && studentRecord && (() => {
+                          const shareUrl = `${window.location.origin}${window.location.pathname}?room=${activeRoom.roomId}`;
+                          const sortedSubmissions = [...allParticipants].sort((a, b) => b.score - a.score);
+                          const myRank = sortedSubmissions.findIndex(p => p.id === studentRecord.id) + 1;
+                          const shareText = `I scored ${studentRecord.score} on "${activeRoom.challengeTitle || "this challenge"}" — can you beat me? 🚀`;
+                          return (
+                            <div className="p-4 bg-gradient-to-br from-pink-50/60 via-orange-50/40 to-amber-50/30 border border-pink-200/60 rounded-2xl space-y-3 text-left">
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-pink-700">Your rank</p>
+                                <p className="text-2xl font-display font-black text-slate-900">#{myRank} <span className="text-base text-slate-500">of {sortedSubmissions.length}</span></p>
+                              </div>
+                              <p className="text-xs text-slate-600 leading-relaxed">Challenge a friend to beat your score:</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <a
+                                  href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold rounded-lg text-center transition-colors"
+                                >
+                                  📱 WhatsApp
+                                </a>
+                                <a
+                                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg text-center transition-colors"
+                                >
+                                  𝕏 Twitter
+                                </a>
+                              </div>
+                              <button
+                                onClick={() => navigator.clipboard.writeText(shareUrl)}
+                                className="w-full py-2 bg-white hover:bg-pink-50 border border-pink-200 text-pink-700 text-[11px] font-bold rounded-lg transition-colors"
+                              >
+                                📋 Copy challenge link
+                              </button>
+                            </div>
+                          );
+                        })()}
+
                         {studentRecord && (
                           <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col gap-4">
                             <div className="flex justify-between items-center text-xs font-mono">
@@ -885,7 +1094,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                               {!emailSent ? (
                                 <div className="space-y-3">
                                   <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 w-full">
-                                    <Mail size={12} /> Email report to student
+                                    <Mail size={12} /> Email my report
                                   </label>
                                   <div className="flex gap-2">
                                     <input
@@ -900,7 +1109,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                                       type="submit"
                                       className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
                                     >
-                                      <Send size={12} /> Send Report
+                                      <Send size={12} /> Request Report
                                     </button>
                                   </div>
                                 </div>
@@ -1117,6 +1326,45 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                             </button>
                           </form>
                         )}
+
+                        {/* Word Cloud — single word submission, no right answer */}
+                        {activeQuestion.type === "word-cloud" && (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              const input = (e.currentTarget.elements.namedItem("wordCloudText") as HTMLInputElement).value;
+                              const word = input.trim().split(/\s+/)[0]; // first word only
+                              if (word) handleSubmitAnswer(word);
+                            }}
+                            className="space-y-4"
+                          >
+                            <div className="bg-violet-50/50 border border-violet-200/60 rounded-xl px-3 py-2 text-[11px] text-violet-700 flex items-center gap-2">
+                              <span>☁️</span>
+                              <span>Submit one word — duplicates grow larger on the live cloud.</span>
+                            </div>
+                            <input
+                              type="text"
+                              name="wordCloudText"
+                              placeholder="One word..."
+                              maxLength={24}
+                              className="w-full px-4 py-3 border border-violet-200 rounded-2xl focus:border-violet-500 focus:outline-hidden text-sm h-11 text-slate-700"
+                              required
+                              autoComplete="off"
+                            />
+                            <button
+                              type="submit"
+                              className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs rounded-xl transition-colors"
+                            >
+                              Add to Cloud
+                            </button>
+                          </form>
+                        )}
+
+                        {/* Puzzle / Order — re-order with Up/Down buttons */}
+                        {activeQuestion.type === "puzzle-order" && (() => {
+                          // Local state for ordering is encoded as an inline component
+                          return <PuzzleOrderInput question={activeQuestion} onSubmit={handleSubmitAnswer} />;
+                        })()}
                       </div>
 
                     </div>
@@ -1412,9 +1660,75 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
 
       {/* SSlive Wisdom Footer */}
       <footer className="max-w-md mx-auto w-full pb-4 text-center text-[10px] font-sans text-slate-400 tracking-wide">
-        Powered by SSlive | Interactive Meeting Forums
+        Powered by SKILL.SCH | Interactive Meeting Forums
       </footer>
 
+    </div>
+  );
+}
+
+
+// ── PuzzleOrderInput — Re-order steps with up/down buttons ───────────────────
+function PuzzleOrderInput({ question, onSubmit }: { question: Question; onSubmit: (a: string) => void }) {
+  // Shuffle once on mount, then student can reorder via arrows
+  const [items, setItems] = React.useState<string[]>(() => {
+    const opts = [...question.options];
+    for (let i = opts.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [opts[i], opts[j]] = [opts[j], opts[i]];
+    }
+    return opts;
+  });
+
+  const move = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir;
+    if (target < 0 || target >= items.length) return;
+    const next = [...items];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setItems(next);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-amber-50/60 border border-amber-200/60 rounded-xl px-3 py-2 text-[11px] text-amber-700 flex items-center gap-2">
+        <span>🧩</span>
+        <span>Re-order the steps. Use the arrows to move items up or down.</span>
+      </div>
+      <div className="space-y-2">
+        {items.map((item, idx) => (
+          <div key={`${item}-${idx}`} className="flex items-center gap-2 bg-white border border-amber-200 rounded-xl p-2.5 shadow-3xs">
+            <span className="w-6 h-6 rounded-md bg-amber-100 text-amber-700 font-mono font-bold text-[10px] flex items-center justify-center shrink-0">
+              {idx + 1}
+            </span>
+            <span className="flex-1 text-xs text-slate-800 font-medium truncate">{item}</span>
+            <button
+              type="button"
+              onClick={() => move(idx, -1)}
+              disabled={idx === 0}
+              className="p-1.5 rounded-md hover:bg-amber-50 disabled:opacity-30 transition-colors"
+              title="Move up"
+            >
+              <ArrowLeft size={12} className="rotate-90 text-amber-700" />
+            </button>
+            <button
+              type="button"
+              onClick={() => move(idx, 1)}
+              disabled={idx === items.length - 1}
+              className="p-1.5 rounded-md hover:bg-amber-50 disabled:opacity-30 transition-colors"
+              title="Move down"
+            >
+              <ArrowLeft size={12} className="-rotate-90 text-amber-700" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onSubmit(items.join("|"))}
+        className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl transition-colors"
+      >
+        Submit Order
+      </button>
     </div>
   );
 }

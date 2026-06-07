@@ -10,6 +10,9 @@ import { motion } from "motion/react";
 import { auth, googleProvider, signInWithPopup } from "./firebase";
 import TeacherDashboard from "./components/TeacherDashboard";
 import StudentScreen from "./components/StudentScreen";
+import PracticeView from "./components/PracticeView";
+import QuickQuizView, { QuickQuizPayload } from "./components/QuickQuizView";
+import { generateQuizWithGroq, isGroqConfigured } from "./lib/groqAi";
 import TeacherLoginScreen from "./components/TeacherLoginScreen";
 import { Doodles } from "./components/Doodles";
 
@@ -89,7 +92,10 @@ export default function App() {
   const [authError, setAuthError] = useState("");
 
   // Role routing: "landing" | "teacher" | "student" | "login"
-  const [portalMode, setPortalMode] = useState<"landing" | "teacher" | "student" | "login">("landing");
+  const [portalMode, setPortalMode] = useState<"landing" | "teacher" | "student" | "login" | "practice" | "quick-quiz" | "generating-quiz">("landing");
+  const [quickQuizPayload, setQuickQuizPayload] = useState<QuickQuizPayload | null>(null);
+  const [generatingError, setGeneratingError] = useState<string>("");
+  const [generatingMeta, setGeneratingMeta] = useState<{ topic: string; course?: string } | null>(null);
   
   // Dynamic live forums count simulation
   const [liveForumsCount, setLiveForumsCount] = useState(1420);
@@ -110,6 +116,8 @@ export default function App() {
   // States for student joining from landing page
   const [landingRoomInput, setLandingRoomInput] = useState("");
   const [studentInitialRoom, setStudentInitialRoom] = useState("");
+  // Wave 7 — skill.sch deep link
+  const [skillSchTopic, setSkillSchTopic] = useState<{ topic: string; course?: string } | null>(null);
 
   // Simulator States to drive interactive playground
   const [simTab, setSimTab] = useState<"quiz" | "spacerace" | "poll">("quiz");
@@ -451,6 +459,40 @@ export default function App() {
       setStudentInitialRoom(directCode);
       setPortalMode("student");
     }
+
+    // Wave 7 — skill.sch sent a topic to quiz on. Auto-generate + drop straight into solo quiz.
+    if (params.get("from") === "skillsch" && params.has("topic")) {
+      const topic = params.get("topic") || "";
+      const course = params.get("course") || undefined;
+      setSkillSchTopic({ topic, course });
+      setGeneratingMeta({ topic, course });
+      setPortalMode("generating-quiz");
+      // Persist topic so teacher mode can still auto-fill if user picks that path
+      try {
+        sessionStorage.setItem("sslive_skillsch_topic", JSON.stringify({ topic, course }));
+      } catch {}
+      // Clean URL so refresh works
+      try {
+        window.history.replaceState({}, "", window.location.pathname);
+      } catch {}
+    }
+
+    // Auto-generated quiz from skill.sch — decode hash, drop user straight in
+    if (window.location.hash.startsWith("#quiz=")) {
+      try {
+        const encoded = window.location.hash.slice("#quiz=".length);
+        const json = decodeURIComponent(atob(encoded));
+        const parsed = JSON.parse(json) as QuickQuizPayload;
+        if (parsed?.questions?.length) {
+          setQuickQuizPayload(parsed);
+          setPortalMode("quick-quiz");
+          // Clean URL so refresh doesn't re-trigger
+          window.history.replaceState({}, "", window.location.pathname + window.location.search);
+        }
+      } catch (e) {
+        console.warn("Failed to decode quick-quiz payload", e);
+      }
+    }
     
     // Check for Paystack payment success callback
     if (params.has("payment_success")) {
@@ -475,6 +517,38 @@ export default function App() {
 
     return unsubscribe;
   }, []);
+
+  // Generate quiz when portalMode hits "generating-quiz"
+  useEffect(() => {
+    if (portalMode !== "generating-quiz" || !generatingMeta) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!isGroqConfigured()) {
+          throw new Error("AI is not configured on this site yet. Set VITE_GROQ_API_KEY (free key at console.groq.com) and redeploy.");
+        }
+        const quiz = await generateQuizWithGroq({
+          topic: generatingMeta.topic,
+          gradeLevel: "High School",
+          questionCount: 5,
+          quizStyle: `From skill.sch lesson${generatingMeta.course ? ` (${generatingMeta.course})` : ""}`,
+          enabledTypes: { multipleChoice: true, trueFalse: true },
+        });
+        if (cancelled) return;
+        setQuickQuizPayload({
+          title: quiz.title || generatingMeta.topic,
+          course: generatingMeta.course,
+          questions: quiz.questions as any,
+        });
+        setPortalMode("quick-quiz");
+      } catch (err: any) {
+        if (cancelled) return;
+        console.error("Quick-quiz generation failed:", err);
+        setGeneratingError(err?.message || "Could not generate a quiz. Please try again.");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [portalMode, generatingMeta]);
 
   const handleTeacherLogin = async () => {
     setAuthError("");
@@ -548,6 +622,80 @@ export default function App() {
         onExit={() => setPortalMode("landing")} 
       />
     );
+  }
+
+  // Loading screen while we generate the quiz with Groq
+  if (portalMode === "generating-quiz") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50/40 via-white to-orange-50/40 text-slate-800 font-sans flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center space-y-6 bg-white p-8 rounded-3xl border border-slate-200/80 shadow-xl">
+          <div className="relative w-20 h-20 mx-auto">
+            <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-amber-500 to-orange-600 animate-pulse" />
+            <div className="absolute inset-0 rounded-3xl flex items-center justify-center text-3xl">🚀</div>
+          </div>
+          <div>
+            <p className="text-[10px] font-mono uppercase tracking-widest text-amber-600 font-bold mb-1">From skill.sch</p>
+            <h2 className="text-xl font-display font-black text-slate-900 leading-tight">{generatingMeta?.topic || "Your lesson"}</h2>
+            {generatingMeta?.course && <p className="text-xs text-slate-500 mt-1">{generatingMeta.course}</p>}
+          </div>
+          {generatingError ? (
+            <div className="space-y-3">
+              <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl p-3 text-left">
+                {generatingError}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setGeneratingError(""); setPortalMode("landing"); setTimeout(() => setPortalMode("generating-quiz"), 30); }}
+                  className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={() => { setGeneratingMeta(null); setGeneratingError(""); setPortalMode("landing"); }}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <div className="flex items-center justify-center gap-2 text-sm text-slate-600">
+                  <svg className="w-4 h-4 animate-spin text-amber-500" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                    <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                  <span>Generating 5 questions with Llama…</span>
+                </div>
+                <p className="text-[11px] text-slate-400">This takes 2–4 seconds. Free, powered by Groq.</p>
+              </div>
+              <button
+                onClick={() => { setGeneratingMeta(null); setGeneratingError(""); setPortalMode("landing"); }}
+                className="w-full py-2 text-[11px] text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Auto-generated quiz from skill.sch lesson — solo player, no room needed
+  if (portalMode === "quick-quiz" && quickQuizPayload) {
+    return (
+      <QuickQuizView
+        payload={quickQuizPayload}
+        onExit={() => { setQuickQuizPayload(null); setPortalMode("landing"); }}
+      />
+    );
+  }
+
+  // Wave 6: Practice mode (spaced repetition)
+  if (portalMode === "practice") {
+    return <PracticeView onExit={() => setPortalMode("landing")} />;
   }
 
   // Route to teacher dashboard once validated with Google Account auth
@@ -652,6 +800,52 @@ export default function App() {
               SSlive fuses conversational dialectical reasoning and AI-powered diagnostic quiz rails to turn dry meetings into responsive arenas of live debate, interactive review, and active learning.
             </p>
 
+            {/* Wave 7 — skill.sch course quiz invite banner */}
+            {skillSchTopic && (
+              <div className="max-w-md mx-auto mb-5">
+                <div className="relative overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-orange-50/60 to-rose-50/40 p-5 shadow-sm">
+                  <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500" />
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-amber-100/80 text-amber-700 border border-amber-200 font-mono font-bold text-[10px] px-2.5 py-1 rounded-full tracking-wider uppercase">
+                      🎯 From SKILL.SCH
+                    </span>
+                    {skillSchTopic.course && (
+                      <span className="text-[10px] font-mono text-slate-500 truncate">{skillSchTopic.course}</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mb-1">Generate a quiz on:</p>
+                  <h3 className="text-lg font-display font-black text-slate-900 mb-3 leading-tight">
+                    {skillSchTopic.topic}
+                  </h3>
+                  <p className="text-[11px] text-slate-600 leading-relaxed mb-4">
+                    Sign in as a teacher to AI-generate a quiz on this topic, or enter a room code below to join as a student.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentUser) {
+                          setPortalMode("teacher");
+                        } else {
+                          setPortalMode("login");
+                        }
+                      }}
+                      className="flex-1 px-3 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-[11px] font-bold rounded-xl transition-all shadow-sm"
+                    >
+                      🚀 Generate Quiz
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSkillSchTopic(null)}
+                      className="px-3 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 text-[11px] font-bold rounded-xl transition-colors"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="max-w-md mx-auto relative">
               <form 
                 onSubmit={handleLandingStudentJoin} 
@@ -676,6 +870,16 @@ export default function App() {
                   <ArrowRight size={13} strokeWidth={2.5} />
                 </button>
               </form>
+
+              {/* Wave 6: Practice mode entry */}
+              <button
+                type="button"
+                onClick={() => setPortalMode("practice")}
+                className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border border-indigo-200/60 text-indigo-700 text-xs font-bold rounded-xl transition-colors"
+              >
+                🧠 Practice wrong answers
+                <span className="text-[10px] font-mono text-indigo-500 opacity-75">spaced repetition</span>
+              </button>
 
               {authError && (
                 <div className="mt-4 bg-error-container text-on-error-container p-3.5 rounded-2xl text-xs flex items-start gap-2.5 border border-red-200 text-left">

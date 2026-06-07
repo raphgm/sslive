@@ -1,15 +1,19 @@
 import React, { useState, useRef } from "react";
 import { 
   Plus, Trash, Sparkles, AlertCircle, Save, ArrowLeft, RefreshCw, Eye, Check, X, 
-  FileText, FileUp, FileSpreadsheet, Clipboard, Download, HelpCircle, ToggleLeft, ToggleRight, Info, EyeOff, PieChart, SlidersHorizontal
+  FileText, FileUp, FileSpreadsheet, Clipboard, Download, HelpCircle, ToggleLeft, ToggleRight, Info, EyeOff, PieChart, SlidersHorizontal,
+  Cloud, Layers, ChevronUp, ChevronDown
 } from "lucide-react";
 import { Question, Quiz } from "../types";
+import { generateQuizWithGroq, isGroqConfigured } from "../lib/groqAi";
 
 interface QuizCreatorProps {
   onSave: (quiz: Partial<Quiz>) => Promise<void>;
   onCancel: () => void;
   existingQuiz?: Quiz | null;
   initialMode?: "manual" | "ai" | "import-paste" | "import-pro" | "import-excel";
+  /** Wave 7: pre-fill the AI topic field — used for skill.sch deep links */
+  initialAiTopic?: string;
 }
 
 const PRESET_TOPICS = [
@@ -19,7 +23,7 @@ const PRESET_TOPICS = [
   { name: "Shakespeare's Hamlet", icon: "🎭" }
 ];
 
-export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMode }: QuizCreatorProps) {
+export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMode, initialAiTopic }: QuizCreatorProps) {
   // Title of the quiz - starts blank or Untitled Quiz if completely new
   const [title, setTitle] = useState(existingQuiz?.title || (existingQuiz ? "" : "Untitled Quiz"));
   
@@ -39,7 +43,7 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
   const [gradeLevel, setGradeLevel] = useState("High School");
 
   // --- SUB-MODE A: AI Generator States (Screenshot 2)
-  const [aiDescribeCover, setAiDescribeCover] = useState("");
+  const [aiDescribeCover, setAiDescribeCover] = useState(initialAiTopic || "");
   const [aiTypesSelected, setAiTypesSelected] = useState<Record<string, boolean>>({
     "multiple-choice": true,
     "true-false": true,
@@ -69,7 +73,7 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Manual Question Fields Handlers
-  const addQuestion = (type: "multiple-choice" | "true-false" | "short-answer" | "poll" | "scale") => {
+  const addQuestion = (type: "multiple-choice" | "true-false" | "short-answer" | "poll" | "scale" | "word-cloud" | "puzzle-order") => {
     let newQ: Question;
     if (type === "multiple-choice") {
       newQ = {
@@ -106,6 +110,25 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
         correctAnswer: "",
         correctOptionIndex: -1,
         explanation: "Scale questions do not have correct answers.",
+      };
+    } else if (type === "word-cloud") {
+      newQ = {
+        text: "",
+        type: "word-cloud",
+        options: [],
+        correctAnswer: "",
+        correctOptionIndex: -1,
+        explanation: "Word Cloud questions collect single-word submissions — no right answer.",
+      };
+    } else if (type === "puzzle-order") {
+      newQ = {
+        text: "",
+        type: "puzzle-order",
+        options: ["", "", "", ""],
+        // correctAnswer stores the ordered sequence joined by "|"
+        correctAnswer: "",
+        correctOptionIndex: -1,
+        explanation: "",
       };
     } else {
       newQ = {
@@ -216,35 +239,32 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
     setAiError("");
 
     try {
-      const res = await fetch("/api/quizzes/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: promptPayload,
-          gradeLevel: gradeLevel,
-          questionCount: sizeLabel,
-          quizType: `SSlive Advanced Workspace Input [${aiSubMode}]`
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json();
-        throw new Error(errJson.error || "Failed to compile questions via SSlive Brain.");
+      if (!isGroqConfigured()) {
+        throw new Error("AI is not configured. Ask the admin to set VITE_GROQ_API_KEY (a free key — get one at console.groq.com).");
       }
-
-      const data = await res.json();
-      if (data && data.questions) {
-        // Formulate standard title if none written
+      const data = await generateQuizWithGroq({
+        topic: promptPayload,
+        gradeLevel,
+        questionCount: sizeLabel,
+        quizStyle: `SSlive Advanced Workspace Input [${aiSubMode}]`,
+        enabledTypes: {
+          multipleChoice: aiTypesSelected["multiple-choice"],
+          trueFalse:      aiTypesSelected["true-false"],
+          shortAnswer:    aiTypesSelected["short-answer"],
+        },
+        companionText: draggedContent || pasteBuffer,
+      });
+      if (data?.questions?.length) {
         if (!title || title === "Untitled Quiz") {
-          setTitle(data.title || "SSlive Custom Prompt Quiz");
+          setTitle(data.title || "AI Generated Quiz");
         }
         setQuestions([...questions, ...data.questions]);
       } else {
-        throw new Error("Peculiar format returned from AI integration.");
+        throw new Error("AI returned an empty quiz. Please refine the topic and retry.");
       }
     } catch (err: any) {
-      console.error(err);
-      setAiError(err.message || "An unexpected error blocked AI integration from completing. Let's retry.");
+      console.error("AI generation error:", err);
+      setAiError(err.message || "An unexpected error blocked AI integration. Let's retry.");
     } finally {
       setIsGenerating(false);
     }
@@ -298,7 +318,7 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
     runServerAiGeneration(promptText, 5);
   };
 
-  // Trigger for Sub-Mode 3: Document Extract PRO
+  // Trigger for Sub-Mode 3: Document Extract PRO — now powered by client-side Groq
   const handleExtractProDoc = async () => {
     if (!proDocContent && !proDocPrompt) {
       setAiError("Please drop a file or specify the core query filters first.");
@@ -309,31 +329,28 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
     setAiError("");
 
     try {
-      const res = await fetch("/api/quizzes/extract-document", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          textContent: proDocContent || proDocPrompt,
-          limit: aiQuestionsCount
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json();
-        throw new Error(errJson.error || "Failed to extract questions from document.");
+      if (!isGroqConfigured()) {
+        throw new Error("AI is not configured. Ask the admin to set VITE_GROQ_API_KEY (a free key — get one at console.groq.com).");
       }
-
-      const data = await res.json();
-      if (data && data.questions) {
+      const source = (proDocContent || proDocPrompt || "").slice(0, 8000);
+      const data = await generateQuizWithGroq({
+        topic: `Extract questions from this document. Focus on the main concepts a teacher would assess: ${source.slice(0, 300)}`,
+        gradeLevel,
+        questionCount: aiQuestionsCount,
+        quizStyle: "Document extraction PRO",
+        enabledTypes: { multipleChoice: true, trueFalse: true, shortAnswer: true },
+        companionText: source,
+      });
+      if (data?.questions?.length) {
         if (!title || title === "Untitled Quiz") {
           setTitle(data.title || "Document Extraction Quiz");
         }
         setQuestions([...questions, ...data.questions]);
       } else {
-        throw new Error("Peculiar format returned from ai integration.");
+        throw new Error("Could not extract questions from that document. Try a clearer source.");
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("Doc extract error:", err);
       setAiError(err.message || "An unexpected error blocked Document Extraction.");
     } finally {
       setIsGenerating(false);
@@ -594,7 +611,7 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
                   </p>
 
                   {/* Option block cards inside central empty state */}
-                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 w-full max-w-2xl mt-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-7 gap-3 w-full max-w-4xl mt-6">
                     <button 
                       onClick={() => addQuestion("multiple-choice")}
                       className="p-4 bg-slate-50 hover:bg-indigo-50/40 border border-slate-150 hover:border-indigo-200 rounded-2xl text-center group cursor-pointer transition-all active:scale-98"
@@ -643,6 +660,26 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
                         <SlidersHorizontal size={16} />
                       </div>
                       <span className="text-[11px] font-semibold text-slate-700">Scale / Rate</span>
+                    </button>
+
+                    <button 
+                      onClick={() => addQuestion("word-cloud")}
+                      className="p-4 bg-slate-50 hover:bg-violet-50/40 border border-slate-150 hover:border-violet-200 rounded-2xl text-center group cursor-pointer transition-all active:scale-98"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-violet-50 text-violet-600 mx-auto flex items-center justify-center text-xs mb-2 group-hover:bg-violet-100">
+                        <Cloud size={16} />
+                      </div>
+                      <span className="text-[11px] font-semibold text-slate-700">Word Cloud</span>
+                    </button>
+
+                    <button 
+                      onClick={() => addQuestion("puzzle-order")}
+                      className="p-4 bg-slate-50 hover:bg-amber-50/40 border border-slate-150 hover:border-amber-200 rounded-2xl text-center group cursor-pointer transition-all active:scale-98"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 mx-auto flex items-center justify-center text-xs mb-2 group-hover:bg-amber-100">
+                        <Layers size={16} />
+                      </div>
+                      <span className="text-[11px] font-semibold text-slate-700">Puzzle / Order</span>
                     </button>
                   </div>
                 </div>
@@ -773,6 +810,60 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
                         </div>
                       )}
 
+                      {q.type === "word-cloud" && (
+                        <div className="pl-3 border-l-2 border-violet-100 mb-4 space-y-1.5 py-2">
+                          <p className="text-[10px] text-slate-500 font-medium flex items-center gap-1.5">
+                            <Cloud size={12} className="text-violet-500" />
+                            Students submit one word — popular words grow larger on the live cloud.
+                          </p>
+                        </div>
+                      )}
+
+                      {q.type === "puzzle-order" && (
+                        <div className="space-y-2.5 pl-3 border-l-2 border-amber-100 mb-4">
+                          <p className="text-[9px] font-mono text-slate-400 uppercase tracking-widest font-semibold">Items in correct order (will be shuffled for students)</p>
+                          <div className="space-y-2">
+                            {q.options.map((opt, optIndex) => (
+                              <div key={optIndex} className="flex items-center gap-2.5 bg-amber-50/30 p-2 rounded-xl border border-amber-100/60">
+                                <span className="w-6 h-6 rounded-md bg-amber-500/15 text-amber-700 font-mono font-bold text-[10px] flex items-center justify-center shrink-0">
+                                  {optIndex + 1}
+                                </span>
+                                <input 
+                                  type="text"
+                                  value={opt}
+                                  onChange={(e) => updateMcOption(qIndex, optIndex, e.target.value)}
+                                  placeholder={`Step ${optIndex + 1}`}
+                                  className="w-full bg-transparent text-xs text-slate-700 focus:outline-hidden py-1 border-b border-transparent focus:border-amber-400"
+                                />
+                                {q.options.length > 2 && (
+                                  <button
+                                    onClick={() => {
+                                      const updated = [...questions];
+                                      updated[qIndex].options = updated[qIndex].options.filter((_, i) => i !== optIndex);
+                                      setQuestions(updated);
+                                    }}
+                                    className="text-slate-400 hover:text-rose-500 transition-colors"
+                                    title="Remove step"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <button
+                              onClick={() => {
+                                const updated = [...questions];
+                                updated[qIndex].options = [...updated[qIndex].options, ""];
+                                setQuestions(updated);
+                              }}
+                              className="text-[10px] font-bold text-amber-600 hover:text-amber-800 flex items-center gap-1 px-2 py-1"
+                            >
+                              <Plus size={11} /> Add step
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Post-Question Advisor Advice */}
                       <div className="mt-4 bg-amber-50/20 p-4 rounded-xl border border-dashed border-amber-200/60">
                         <label className="block text-[8px] font-mono text-amber-700 uppercase tracking-widest mb-1 font-bold">Post-Question SSlive Insights</label>
@@ -829,6 +920,20 @@ export default function QuizCreator({ onSave, onCancel, existingQuiz, initialMod
                 >
                   <Plus size={13} />
                   <span>Scale</span>
+                </button>
+                <button 
+                  onClick={() => addQuestion("word-cloud")}
+                  className="flex-1 sm:flex-none px-4 py-2 bg-white hover:bg-violet-50 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-3xs"
+                >
+                  <Cloud size={13} />
+                  <span>Word Cloud</span>
+                </button>
+                <button 
+                  onClick={() => addQuestion("puzzle-order")}
+                  className="flex-1 sm:flex-none px-4 py-2 bg-white hover:bg-amber-50 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-3xs"
+                >
+                  <Layers size={13} />
+                  <span>Puzzle</span>
                 </button>
               </div>
             </div>

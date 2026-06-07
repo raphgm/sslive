@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { auth, googleProvider, signInWithPopup } from "../firebase";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 
 interface TeacherLoginScreenProps {
   onBackToHome: () => void;
@@ -26,6 +27,7 @@ export default function TeacherLoginScreen({
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
 
   const [logoIndex, setLogoIndex] = useState(0);
   const logos = [
@@ -42,7 +44,7 @@ export default function TeacherLoginScreen({
 
   const currentLogo = logos[logoIndex];
 
-  const handleEmailSignIn = (e: React.FormEvent) => {
+  const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setEmailError("");
     setAuthError("");
@@ -57,21 +59,35 @@ export default function TeacherLoginScreen({
     }
 
     setIsSigningIn(true);
-    // Dynamic sign in process using details entered by the educator
-    setTimeout(() => {
+    
+    try {
+      if (isSignUp) {
+        const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        setShowSuccessToast(true);
+        setTimeout(() => {
+          onLoginSuccess({
+            uid: userCredential.user.uid,
+            email: userCredential.user.email,
+            displayName: userCredential.user.displayName || email.split("@")[0],
+            photoURL: userCredential.user.photoURL
+          });
+        }, 1000);
+      } else {
+        const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+        setShowSuccessToast(true);
+        setTimeout(() => {
+          onLoginSuccess({
+            uid: userCredential.user.uid,
+            email: userCredential.user.email,
+            displayName: userCredential.user.displayName || email.split("@")[0],
+            photoURL: userCredential.user.photoURL
+          });
+        }, 1000);
+      }
+    } catch (err: any) {
       setIsSigningIn(false);
-      setShowSuccessToast(true);
-      setTimeout(() => {
-        // Authenticate with dynamically provided custom teacher details
-        const emailLocalPart = email.split("@")[0] || "user";
-        onLoginSuccess({
-          uid: `dynamic-teacher-${emailLocalPart}-${Date.now()}`,
-          email: email.trim(),
-          displayName: `${emailLocalPart.charAt(0).toUpperCase() + emailLocalPart.slice(1)} (Educator)`,
-          photoURL: "https://lh3.googleusercontent.com/a/default-user=s96-c"
-        });
-      }, 1000);
-    }, 1200);
+      setAuthError(err.message || "Failed to authenticate.");
+    }
   };
 
   return (
@@ -138,10 +154,10 @@ export default function TeacherLoginScreen({
       {/* Primary Container Card */}
       <div className="w-full max-w-md bg-white border border-slate-200/90 rounded-3xl p-8 shadow-[0_8px_30px_rgb(0,0,0,0.02)] z-10 relative">
         <h2 className="font-display font-black text-2xl text-slate-900 mb-1.5 text-left">
-          Teacher Login
+          {isSignUp ? "Teacher Sign Up" : "Teacher Login"}
         </h2>
         <p className="text-slate-450 text-xs mb-6 text-left">
-          Sign into your secure educator console.
+          {isSignUp ? "Create your secure educator console account." : "Sign into your secure educator console."}
         </p>
 
         {/* Global Error Banner */}
@@ -223,10 +239,10 @@ export default function TeacherLoginScreen({
             {isSigningIn ? (
               <div className="flex items-center gap-2">
                 <div className="w-4.5 h-4.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Signing In...</span>
+                <span>{isSignUp ? "Creating Account..." : "Signing In..."}</span>
               </div>
             ) : (
-              <span>Sign In</span>
+              <span>{isSignUp ? "Sign Up" : "Sign In"}</span>
             )}
           </button>
         </form>
@@ -273,16 +289,16 @@ export default function TeacherLoginScreen({
       {/* Account Registration Box */}
       <div className="w-full max-w-md bg-slate-100/50 border border-slate-200/60 rounded-3xl p-5 mt-4 text-center z-10">
         <p className="text-slate-500 text-xs font-semibold leading-relaxed">
-          New to SSLive?{" "}
+          {isSignUp ? "Already have an account?" : "New to SSLive?"}{" "}
           <a
-            href="#signup"
+            href={isSignUp ? "#login" : "#signup"}
             onClick={(e) => {
               e.preventDefault();
-              alert("SSLive handles self-provisioned educator sign-ups instantly. Simply input any email & password of your choice in the login form above to instantly authenticate and create your account, or sign in using Google!");
+              setIsSignUp(!isSignUp);
             }}
             className="text-indigo-600 hover:text-indigo-850 font-bold ml-1 hover:underline transition-all cursor-pointer"
           >
-            CREATE ACCOUNT
+            {isSignUp ? "SIGN IN" : "CREATE ACCOUNT"}
           </a>
         </p>
       </div>

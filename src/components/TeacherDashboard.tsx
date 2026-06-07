@@ -35,6 +35,23 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
   const [floatingReactions, setFloatingReactions] = useState<Array<{ id: string; emoji: string; xPct: number; name: string }>>([]);
   const lastReactionTimestampsRef = React.useRef<Record<string, string>>({});
 
+  // Wave 7: pick up skill.sch deep-link topic from sessionStorage
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("sslive_skillsch_topic");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.topic) {
+          setSkillSchTopic(parsed.topic);
+          setCreatorInitialMode("ai");
+          setCurrentView("creator");
+          // Consume — only auto-open once per visit
+          sessionStorage.removeItem("sslive_skillsch_topic");
+        }
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     participants.forEach(p => {
       const prev = lastReactionTimestampsRef.current[p.id];
@@ -56,6 +73,8 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
 
   // View States
   const [currentView, setCurrentView] = useState<"launchpad" | "quizzes" | "discover" | "rooms" | "reports" | "live-results" | "creator">("launchpad");
+  // Wave 7: skill.sch deep link
+  const [skillSchTopic, setSkillSchTopic] = useState<string>("");
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
   const [isAddQuizModalOpen, setIsAddQuizModalOpen] = useState(false);
   const [creatorInitialMode, setCreatorInitialMode] = useState<"manual" | "ai" | "import-paste" | "import-pro" | "import-excel">("manual");
@@ -64,6 +83,30 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
   const [selectedQuizId, setSelectedQuizId] = useState<string>("");
   const [dashboardLayoutOption, setDashboardLayoutOption] = useState<"bento" | "tactile-console">("tactile-console");
   const [selectedPacing, setSelectedPacing] = useState<"student-paced-feedback" | "student-paced-nav" | "teacher-paced">("student-paced-feedback");
+  const [teamModeOnLaunch, setTeamModeOnLaunch] = useState(false);
+  // Assignment mode (Wave 4)
+  const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
+  const [assignmentTitle, setAssignmentTitle] = useState("");
+  const [assignmentOpenAt, setAssignmentOpenAt] = useState<string>(() => {
+    // Default: open now
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
+  const [assignmentCloseAt, setAssignmentCloseAt] = useState<string>(() => {
+    // Default: close in 7 days
+    const future = new Date();
+    future.setDate(future.getDate() + 7);
+    future.setMinutes(future.getMinutes() - future.getTimezoneOffset());
+    return future.toISOString().slice(0, 16);
+  });
+  const [assignmentSchedulingError, setAssignmentSchedulingError] = useState("");
+  const [scheduledAssignmentInfo, setScheduledAssignmentInfo] = useState<{ roomId: string; closeAt: string } | null>(null);
+  // Challenge mode (Wave 5)
+  const [challengeModalOpen, setChallengeModalOpen] = useState(false);
+  const [challengeTitle, setChallengeTitle] = useState("");
+  const [challengeError, setChallengeError] = useState("");
+  const [activeChallengeInfo, setActiveChallengeInfo] = useState<{ roomId: string; title: string } | null>(null);
   const [spaceRaceLanesCount, setSpaceRaceLanesCount] = useState<number>(3);
 
   // Copy success indicator
@@ -297,6 +340,85 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
     });
   };
 
+  // Create a Challenge (Wave 5) — viral async game
+  const handleCreateChallenge = async () => {
+    const quizId = selectedQuizId || (quizzes[0]?.id || "");
+    if (!room || !quizId) {
+      setChallengeError("Pick a quiz first.");
+      return;
+    }
+    if (!challengeTitle.trim()) {
+      setChallengeError("Give your challenge a title!");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "rooms", room.roomId), {
+        activeActivity: "quiz",
+        activeQuizId: quizId,
+        activeQuestionIndex: 0,
+        pacing: "student-paced-feedback",
+        quickQuestion: null,
+        showFeedback: true,
+        showResults: true,
+        teamModeEnabled: false,
+        challengeMode: true,
+        challengeCreatorName: teacherEmail ? teacherEmail.split("@")[0] : "Teacher",
+        challengeTitle: challengeTitle.trim(),
+        // Clear assignment fields if any
+        assignmentMode: false,
+      }).catch((err) => {
+        handleFirestoreError(err, OperationType.WRITE, `rooms/${room.roomId}`);
+      });
+      setActiveChallengeInfo({ roomId: room.roomId, title: challengeTitle.trim() });
+      setChallengeError("");
+    } catch (e) {
+      console.error(e);
+      setChallengeError("Failed to create challenge. Try again.");
+    }
+  };
+
+  // Schedule a self-paced Assignment (Wave 4)
+  const handleScheduleAssignment = async () => {
+    const quizId = selectedQuizId || (quizzes[0]?.id || "");
+    if (!room || !quizId) {
+      setAssignmentSchedulingError("Pick a quiz first.");
+      return;
+    }
+    if (!assignmentTitle.trim()) {
+      setAssignmentSchedulingError("Give the assignment a title so students recognise it.");
+      return;
+    }
+    const openAt = new Date(assignmentOpenAt).toISOString();
+    const closeAt = new Date(assignmentCloseAt).toISOString();
+    if (new Date(closeAt).getTime() <= new Date(openAt).getTime()) {
+      setAssignmentSchedulingError("Close time must be after open time.");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "rooms", room.roomId), {
+        activeActivity: "quiz",
+        activeQuizId: quizId,
+        activeQuestionIndex: 0,
+        pacing: "student-paced-feedback", // assignments are always self-paced
+        quickQuestion: null,
+        showFeedback: true,
+        showResults: true,
+        teamModeEnabled: false,
+        assignmentMode: true,
+        assignmentOpenAt: openAt,
+        assignmentCloseAt: closeAt,
+        assignmentTitle: assignmentTitle.trim(),
+      }).catch((err) => {
+        handleFirestoreError(err, OperationType.WRITE, `rooms/${room.roomId}`);
+      });
+      setScheduledAssignmentInfo({ roomId: room.roomId, closeAt });
+      setAssignmentSchedulingError("");
+    } catch (e) {
+      console.error(e);
+      setAssignmentSchedulingError("Failed to schedule assignment. Try again.");
+    }
+  };
+
   // Launch a standard Quiz Activity
   const handleLaunchQuiz = async () => {
     const quizId = selectedQuizId || (quizzes[0]?.id || "");
@@ -310,6 +432,7 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
         quickQuestion: null,
         showFeedback: true,
         showResults: true,
+        teamModeEnabled: teamModeOnLaunch,
       }).catch((err) => {
         handleFirestoreError(err, OperationType.WRITE, `rooms/${room.roomId}`);
       });
@@ -850,9 +973,11 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
         onCancel={() => {
           setEditingQuiz(null);
           setCurrentView("quizzes");
+          setSkillSchTopic("");
         }} 
         existingQuiz={editingQuiz}
         initialMode={editingQuiz ? "manual" : creatorInitialMode}
+        initialAiTopic={!editingQuiz ? skillSchTopic : undefined}
       />
     );
   }
@@ -861,6 +986,262 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
     <div className="min-h-screen bg-neutral-50/60 text-slate-800 font-sans" id="teacher-dashboard-main">
 
       {/* Floating reactions overlay — students send 👏 🔥 etc. via StudentScreen */}
+      {/* Challenge modal (Wave 5) */}
+      {challengeModalOpen && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setChallengeModalOpen(false)} />
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+            <div className="h-1 w-full bg-gradient-to-r from-pink-500 via-rose-500 to-orange-500" />
+            <div className="p-6">
+              <button
+                onClick={() => setChallengeModalOpen(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                ✕
+              </button>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500 to-orange-500 flex items-center justify-center text-white shadow-sm">
+                  🚀
+                </div>
+                <div>
+                  <p className="text-[10px] font-mono font-bold text-pink-600 uppercase tracking-widest">Viral · Async</p>
+                  <h3 className="text-lg font-display font-black text-slate-900">Create a Challenge</h3>
+                </div>
+              </div>
+
+              {activeChallengeInfo ? (
+                <div className="space-y-4">
+                  <div className="bg-pink-50 border border-pink-200 rounded-xl p-4">
+                    <p className="text-xs font-bold text-pink-800 flex items-center gap-1.5">
+                      🎉 Challenge live!
+                    </p>
+                    <p className="text-[11px] text-pink-700 mt-1">
+                      <strong>{activeChallengeInfo.title}</strong> is now open. Share the link — anyone with it can play and join the leaderboard.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Share link</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs font-mono text-slate-800 bg-white border border-slate-200 rounded px-2 py-1.5 overflow-x-auto">
+                        {`${window.location.origin}${window.location.pathname}?room=${activeChallengeInfo.roomId}`}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?room=${activeChallengeInfo.roomId}`);
+                        }}
+                        className="px-2.5 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded text-[11px] font-bold transition-colors"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(`Try beating my score on "${activeChallengeInfo.title}"! ${window.location.origin}${window.location.pathname}?room=${activeChallengeInfo.roomId}`)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold rounded-lg text-center transition-colors"
+                      >
+                        📱 WhatsApp
+                      </a>
+                      <a
+                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Try beating my score on "${activeChallengeInfo.title}"!`)}&url=${encodeURIComponent(`${window.location.origin}${window.location.pathname}?room=${activeChallengeInfo.roomId}`)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg text-center transition-colors"
+                      >
+                        𝕏 Twitter
+                      </a>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setChallengeModalOpen(false)}
+                    className="w-full py-2.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-bold rounded-xl transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Challenge Title</label>
+                    <input
+                      type="text"
+                      value={challengeTitle}
+                      onChange={(e) => setChallengeTitle(e.target.value)}
+                      placeholder="e.g. Beat me at Cloud Trivia!"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-pink-500 focus:outline-hidden text-sm text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Quiz</label>
+                    <select
+                      value={selectedQuizId}
+                      onChange={(e) => setSelectedQuizId(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-pink-500 focus:outline-hidden text-sm text-slate-800 bg-white"
+                    >
+                      {quizzes.map(q => <option key={q.id} value={q.id}>{q.title}</option>)}
+                    </select>
+                  </div>
+                  <div className="bg-pink-50/60 border border-pink-200/60 rounded-lg px-3 py-2.5 text-[11px] text-pink-700 leading-relaxed">
+                    🔥 Anyone with the link can join, play, and join the leaderboard. Open indefinitely until you close the room.
+                  </div>
+                  {challengeError && (
+                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-2.5 text-xs text-rose-700">
+                      {challengeError}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setChallengeModalOpen(false)}
+                      className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCreateChallenge}
+                      className="flex-1 py-2.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      🚀 Launch
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assignment scheduling modal (Wave 4) */}
+      {assignmentModalOpen && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setAssignmentModalOpen(false)} />
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+            <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-blue-500" />
+            <div className="p-6">
+              <button
+                onClick={() => setAssignmentModalOpen(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                ✕
+              </button>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+                  📅
+                </div>
+                <div>
+                  <p className="text-[10px] font-mono font-bold text-violet-600 uppercase tracking-widest">Self-Paced</p>
+                  <h3 className="text-lg font-display font-black text-slate-900">Schedule Assignment</h3>
+                </div>
+              </div>
+
+              {scheduledAssignmentInfo ? (
+                /* Success state */
+                <div className="space-y-4">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                    <p className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                      ✅ Assignment scheduled
+                    </p>
+                    <p className="text-[11px] text-emerald-700 mt-1">
+                      Students can join the room from now until{" "}
+                      <strong>{new Date(scheduledAssignmentInfo.closeAt).toLocaleString()}</strong>.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Share with students</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs font-mono text-slate-800 bg-white border border-slate-200 rounded px-2 py-1.5 overflow-x-auto">
+                        {`${window.location.origin}${window.location.pathname}?room=${scheduledAssignmentInfo.roomId}`}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?room=${scheduledAssignmentInfo.roomId}`);
+                        }}
+                        className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded text-[11px] font-bold transition-colors"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2">
+                      Room code: <strong className="font-mono">{scheduledAssignmentInfo.roomId}</strong>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setAssignmentModalOpen(false)}
+                    className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-xl transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : (
+                /* Form state */
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Assignment Title</label>
+                    <input
+                      type="text"
+                      value={assignmentTitle}
+                      onChange={(e) => setAssignmentTitle(e.target.value)}
+                      placeholder="e.g. Chapter 3 Homework"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-violet-500 focus:outline-hidden text-sm text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Quiz</label>
+                    <select
+                      value={selectedQuizId}
+                      onChange={(e) => setSelectedQuizId(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-violet-500 focus:outline-hidden text-sm text-slate-800 bg-white"
+                    >
+                      {quizzes.map(q => <option key={q.id} value={q.id}>{q.title}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Opens</label>
+                      <input
+                        type="datetime-local"
+                        value={assignmentOpenAt}
+                        onChange={(e) => setAssignmentOpenAt(e.target.value)}
+                        className="w-full px-2 py-2 border border-slate-200 rounded-lg focus:border-violet-500 focus:outline-hidden text-xs text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Closes</label>
+                      <input
+                        type="datetime-local"
+                        value={assignmentCloseAt}
+                        onChange={(e) => setAssignmentCloseAt(e.target.value)}
+                        className="w-full px-2 py-2 border border-slate-200 rounded-lg focus:border-violet-500 focus:outline-hidden text-xs text-slate-800"
+                      />
+                    </div>
+                  </div>
+                  <div className="bg-violet-50/60 border border-violet-200/60 rounded-lg px-3 py-2.5 text-[11px] text-violet-700 leading-relaxed">
+                    💡 Students join from this room code and play at their own pace within the window. Results aggregate as they finish.
+                  </div>
+                  {assignmentSchedulingError && (
+                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-2.5 text-xs text-rose-700">
+                      {assignmentSchedulingError}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setAssignmentModalOpen(false)}
+                      className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleScheduleAssignment}
+                      className="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      📅 Schedule
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="pointer-events-none fixed inset-0 z-[150] overflow-hidden">
         <AnimatePresence>
           {floatingReactions.map(r => (
@@ -2156,24 +2537,76 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
                         </div>
                       )}
 
+                      {/* Team Mode Toggle */}
+                      <div className="flex items-center justify-between bg-white p-3.5 rounded-xl border border-slate-200/60 shadow-3xs">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">🛡️</span>
+                          <div>
+                            <p className="text-[11px] font-bold text-slate-800">Team Mode</p>
+                            <p className="text-[10px] text-slate-400">Players pick a team on join — scores pool per team</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setTeamModeOnLaunch(v => !v)}
+                          className={`w-10 h-5 rounded-full transition-all relative cursor-pointer shrink-0 ${
+                            teamModeOnLaunch ? "bg-indigo-600" : "bg-slate-300"
+                          }`}
+                        >
+                          <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all shadow-sm ${
+                            teamModeOnLaunch ? "right-0.5" : "left-0.5"
+                          }`} />
+                        </button>
+                      </div>
+
                       <div className="pt-2 flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200/60 shadow-3xs">
                         <span className="text-[11px] text-slate-400 flex items-center gap-1 font-medium">
                           <Info size={12} className="text-slate-450 shrink-0" />
                           {room && room.activeActivity ? "⚠️ Active session will auto-end" : "👥 Clears student response state"}
                         </span>
-                        <button 
-                          onClick={handleLaunchQuiz}
-                          disabled={quizzes.length === 0}
-                          className={`px-5 py-2.5 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer ${
-                            room && room.activeActivity 
-                              ? "bg-amber-600 hover:bg-amber-700 shadow-amber-100" 
-                              : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100"
-                          }`}
-                          id="launch-quiz-now"
-                        >
-                          {room && room.activeActivity ? <Zap size={14} /> : <Play size={14} />}
-                          {room && room.activeActivity ? "Swap & Launch Quiz" : "Launch Quiz"}
-                        </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setChallengeTitle(quizzes.find(q => q.id === selectedQuizId)?.title || quizzes[0]?.title || "");
+                              setChallengeModalOpen(true);
+                              setChallengeError("");
+                              setActiveChallengeInfo(null);
+                            }}
+                            disabled={quizzes.length === 0}
+                            className="px-4 py-2.5 bg-white border border-slate-200 hover:border-pink-300 hover:bg-pink-50/50 text-slate-700 hover:text-pink-700 rounded-xl text-xs font-bold transition-all shadow-3xs flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Create a viral challenge — students share with friends"
+                          >
+                            🚀 Create Challenge
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignmentTitle(quizzes.find(q => q.id === selectedQuizId)?.title || quizzes[0]?.title || "");
+                              setAssignmentModalOpen(true);
+                              setAssignmentSchedulingError("");
+                              setScheduledAssignmentInfo(null);
+                            }}
+                            disabled={quizzes.length === 0}
+                            className="px-4 py-2.5 bg-white border border-slate-200 hover:border-violet-300 hover:bg-violet-50/50 text-slate-700 hover:text-violet-700 rounded-xl text-xs font-bold transition-all shadow-3xs flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Schedule a self-paced assignment with an open/close window"
+                          >
+                            📅 Schedule Assignment
+                          </button>
+                          <button 
+                            onClick={handleLaunchQuiz}
+                            disabled={quizzes.length === 0}
+                            className={`px-5 py-2.5 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer ${
+                              room && room.activeActivity 
+                                ? "bg-amber-600 hover:bg-amber-700 shadow-amber-100" 
+                                : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100"
+                            }`}
+                            id="launch-quiz-now"
+                          >
+                            {room && room.activeActivity ? <Zap size={14} /> : <Play size={14} />}
+                            {room && room.activeActivity ? "Swap & Launch Quiz" : "Launch Quiz"}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
