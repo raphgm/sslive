@@ -10,6 +10,7 @@ import { motion } from "motion/react";
 import { auth, googleProvider, signInWithPopup } from "./firebase";
 import TeacherDashboard from "./components/TeacherDashboard";
 import StudentScreen from "./components/StudentScreen";
+import PracticeView from "./components/PracticeView";
 import TeacherLoginScreen from "./components/TeacherLoginScreen";
 import { Doodles } from "./components/Doodles";
 
@@ -89,7 +90,7 @@ export default function App() {
   const [authError, setAuthError] = useState("");
 
   // Role routing: "landing" | "teacher" | "student" | "login"
-  const [portalMode, setPortalMode] = useState<"landing" | "teacher" | "student" | "login">("landing");
+  const [portalMode, setPortalMode] = useState<"landing" | "teacher" | "student" | "login" | "practice">("landing");
   
   // Dynamic live forums count simulation
   const [liveForumsCount, setLiveForumsCount] = useState(1420);
@@ -563,6 +564,11 @@ export default function App() {
     );
   }
 
+  // Wave 6: Practice mode (spaced repetition)
+  if (portalMode === "practice") {
+    return <PracticeView onExit={() => setPortalMode("landing")} />;
+  }
+
   // Route to teacher dashboard once validated with Google Account auth
   if (portalMode === "teacher" && currentUser) {
     return (
@@ -735,6 +741,16 @@ export default function App() {
                   <ArrowRight size={13} strokeWidth={2.5} />
                 </button>
               </form>
+
+              {/* Wave 6: Practice mode entry */}
+              <button
+                type="button"
+                onClick={() => setPortalMode("practice")}
+                className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border border-indigo-200/60 text-indigo-700 text-xs font-bold rounded-xl transition-colors"
+              >
+                🧠 Practice wrong answers
+                <span className="text-[10px] font-mono text-indigo-500 opacity-75">spaced repetition</span>
+              </button>
 
               {authError && (
                 <div className="mt-4 bg-error-container text-on-error-container p-3.5 rounded-2xl text-xs flex items-start gap-2.5 border border-red-200 text-left">
