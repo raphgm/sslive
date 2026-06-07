@@ -62,6 +62,14 @@ export interface Room {
   rosterEnabled?: boolean;
   /** Team mode: players choose a team on join; scores pool per team */
   teamModeEnabled?: boolean;
+  /** Self-paced assignment mode: room stays open in a window for async homework */
+  assignmentMode?: boolean;
+  /** ISO timestamp: assignment opens (students can join from this moment) */
+  assignmentOpenAt?: string;
+  /** ISO timestamp: assignment closes (students cannot submit after) */
+  assignmentCloseAt?: string;
+  /** Assignment title shown to students */
+  assignmentTitle?: string;
   createdAt: any;
 }
 
