@@ -339,6 +339,21 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
     } else if (currentQ.type === "puzzle-order") {
       const expected = (currentQ.correctAnswer || currentQ.options.join("|")).trim();
       isCorrect = String(selectedAnswer).trim() === expected;
+    } else if (currentQ.type === "multiple-choice") {
+      // Match by OPTION INDEX — students submit full option text ("B. Platform as a Service")
+      // but correctAnswer is often just the letter ("B"). Index is the source of truth.
+      const submittedIdx = currentQ.options.findIndex(o => o === selectedAnswer);
+      if (submittedIdx !== -1 && typeof currentQ.correctOptionIndex === "number" && currentQ.correctOptionIndex >= 0) {
+        isCorrect = submittedIdx === currentQ.correctOptionIndex;
+      } else {
+        // Fallbacks for legacy data where correctAnswer is the option letter or full text
+        const submitted = String(selectedAnswer).trim().toLowerCase();
+        const expected = String(currentQ.correctAnswer || "").trim().toLowerCase();
+        // Strip "A. " / "B) " etc prefix for letter-only matches
+        const letterMatch = submitted.match(/^([a-z])[\.\)]/);
+        const letter = letterMatch ? letterMatch[1] : null;
+        isCorrect = submitted === expected || (letter !== null && letter === expected);
+      }
     } else {
       isCorrect = String(selectedAnswer).trim().toLowerCase() === String(currentQ.correctAnswer).trim().toLowerCase();
     }
