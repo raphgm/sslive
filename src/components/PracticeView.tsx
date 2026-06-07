@@ -117,7 +117,7 @@ export default function PracticeView({ onExit, studentName: studentOverride }: P
       <div className="min-h-screen bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/40 text-slate-800 font-sans flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-white rounded-3xl border border-slate-200/80 shadow-xl shadow-indigo-200/30 overflow-hidden">
           {/* Gradient header */}
-          <div className="relative px-6 pt-6 pb-16 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 text-white overflow-hidden">
+          <div className="relative px-6 pt-6 pb-6 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 text-white overflow-hidden">
             <div className="absolute inset-0 opacity-[0.08] bg-[radial-gradient(circle_at_30%_20%,#fff_1px,transparent_1px)] [background-size:24px_24px] pointer-events-none" />
             <div className="absolute -top-12 -right-8 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none" />
 
@@ -138,19 +138,19 @@ export default function PracticeView({ onExit, studentName: studentOverride }: P
           </div>
 
           {/* Body */}
-          <div className="px-6 pb-6 -mt-8 space-y-5 relative z-20">
+          <div className="px-6 pt-5 pb-6 space-y-5 relative z-20">
             {/* Stats card — floats up over the gradient seam */}
             <div className="grid grid-cols-3 gap-2 bg-white rounded-2xl border border-slate-200 shadow-lg shadow-slate-200/50 p-2">
               <div className="rounded-xl p-3 text-center bg-gradient-to-br from-amber-50 to-orange-50/60">
-                <p className="text-2xl font-mono font-black text-amber-700 leading-none">{stats.due}</p>
+                <p className="text-2xl font-mono font-black text-amber-700 leading-tight">{stats.due}</p>
                 <p className="text-[9px] font-bold text-amber-700/80 uppercase tracking-wider mt-1">Due now</p>
               </div>
               <div className="rounded-xl p-3 text-center bg-gradient-to-br from-sky-50 to-blue-50/60">
-                <p className="text-2xl font-mono font-black text-sky-700 leading-none">{stats.learning}</p>
+                <p className="text-2xl font-mono font-black text-sky-700 leading-tight">{stats.learning}</p>
                 <p className="text-[9px] font-bold text-sky-700/80 uppercase tracking-wider mt-1">Learning</p>
               </div>
               <div className="rounded-xl p-3 text-center bg-gradient-to-br from-emerald-50 to-teal-50/60">
-                <p className="text-2xl font-mono font-black text-emerald-700 leading-none">{stats.mastered}</p>
+                <p className="text-2xl font-mono font-black text-emerald-700 leading-tight">{stats.mastered}</p>
                 <p className="text-[9px] font-bold text-emerald-700/80 uppercase tracking-wider mt-1">Mastered</p>
               </div>
             </div>
