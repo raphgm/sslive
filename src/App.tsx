@@ -11,6 +11,7 @@ import { auth, googleProvider, signInWithPopup } from "./firebase";
 import TeacherDashboard from "./components/TeacherDashboard";
 import StudentScreen from "./components/StudentScreen";
 import PracticeView from "./components/PracticeView";
+import QuickQuizView, { QuickQuizPayload } from "./components/QuickQuizView";
 import TeacherLoginScreen from "./components/TeacherLoginScreen";
 import { Doodles } from "./components/Doodles";
 
@@ -90,7 +91,8 @@ export default function App() {
   const [authError, setAuthError] = useState("");
 
   // Role routing: "landing" | "teacher" | "student" | "login"
-  const [portalMode, setPortalMode] = useState<"landing" | "teacher" | "student" | "login" | "practice">("landing");
+  const [portalMode, setPortalMode] = useState<"landing" | "teacher" | "student" | "login" | "practice" | "quick-quiz">("landing");
+  const [quickQuizPayload, setQuickQuizPayload] = useState<QuickQuizPayload | null>(null);
   
   // Dynamic live forums count simulation
   const [liveForumsCount, setLiveForumsCount] = useState(1420);
@@ -465,6 +467,23 @@ export default function App() {
         sessionStorage.setItem("sslive_skillsch_topic", JSON.stringify({ topic, course }));
       } catch {}
     }
+
+    // Auto-generated quiz from skill.sch — decode hash, drop user straight in
+    if (window.location.hash.startsWith("#quiz=")) {
+      try {
+        const encoded = window.location.hash.slice("#quiz=".length);
+        const json = decodeURIComponent(atob(encoded));
+        const parsed = JSON.parse(json) as QuickQuizPayload;
+        if (parsed?.questions?.length) {
+          setQuickQuizPayload(parsed);
+          setPortalMode("quick-quiz");
+          // Clean URL so refresh doesn't re-trigger
+          window.history.replaceState({}, "", window.location.pathname + window.location.search);
+        }
+      } catch (e) {
+        console.warn("Failed to decode quick-quiz payload", e);
+      }
+    }
     
     // Check for Paystack payment success callback
     if (params.has("payment_success")) {
@@ -560,6 +579,16 @@ export default function App() {
       <StudentScreen 
         initialRoomCode={studentInitialRoom} 
         onExit={() => setPortalMode("landing")} 
+      />
+    );
+  }
+
+  // Auto-generated quiz from skill.sch lesson — solo player, no room needed
+  if (portalMode === "quick-quiz" && quickQuizPayload) {
+    return (
+      <QuickQuizView
+        payload={quickQuizPayload}
+        onExit={() => { setQuickQuizPayload(null); setPortalMode("landing"); }}
       />
     );
   }
