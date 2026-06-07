@@ -777,6 +777,37 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
               <p className="text-xs text-slate-500">Provide your name to participate in meeting activities</p>
             </div>
 
+            {/* Challenge banner (Wave 5) */}
+            {activeRoom.challengeMode && (() => {
+              // Live leaderboard preview
+              const sorted = [...allParticipants].sort((a, b) => b.score - a.score);
+              const topScore = sorted[0]?.score || 0;
+              const topName = sorted[0]?.name;
+              return (
+                <div className="bg-gradient-to-br from-pink-50/60 via-orange-50/40 to-amber-50/30 border border-pink-200/60 rounded-xl p-4 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-pink-700 flex items-center gap-1.5">
+                    🚀 Challenge {activeRoom.challengeCreatorName && `from ${activeRoom.challengeCreatorName}`}
+                  </p>
+                  {activeRoom.challengeTitle && (
+                    <p className="text-base font-display font-black text-slate-900 leading-tight">{activeRoom.challengeTitle}</p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="bg-white/70 rounded-lg p-2 text-center">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Players</p>
+                      <p className="text-base font-mono font-black text-slate-900">{allParticipants.length}</p>
+                    </div>
+                    <div className="bg-white/70 rounded-lg p-2 text-center">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Top Score</p>
+                      <p className="text-base font-mono font-black text-pink-700">{topScore}{topName ? ` · ${topName}` : ""}</p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    🔥 Beat the top score and share with your friends to keep the streak going.
+                  </p>
+                </div>
+              );
+            })()}
+
             {/* Assignment context banner */}
             {activeRoom.assignmentMode && (() => {
               const now = Date.now();
@@ -991,6 +1022,46 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                           <h3 className="font-display text-base font-semibold text-slate-800">Quiz Completed!</h3>
                           <p className="text-xs text-slate-400 mt-1">Excellent job submitting your answers. Results are synced live with the teacher dashboard.</p>
                         </div>
+
+                        {/* Challenge share-back (Wave 5) */}
+                        {activeRoom?.challengeMode && studentRecord && (() => {
+                          const shareUrl = `${window.location.origin}${window.location.pathname}?room=${activeRoom.roomId}`;
+                          const sortedSubmissions = [...allParticipants].sort((a, b) => b.score - a.score);
+                          const myRank = sortedSubmissions.findIndex(p => p.id === studentRecord.id) + 1;
+                          const shareText = `I scored ${studentRecord.score} on "${activeRoom.challengeTitle || "this challenge"}" — can you beat me? 🚀`;
+                          return (
+                            <div className="p-4 bg-gradient-to-br from-pink-50/60 via-orange-50/40 to-amber-50/30 border border-pink-200/60 rounded-2xl space-y-3 text-left">
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-pink-700">Your rank</p>
+                                <p className="text-2xl font-display font-black text-slate-900">#{myRank} <span className="text-base text-slate-500">of {sortedSubmissions.length}</span></p>
+                              </div>
+                              <p className="text-xs text-slate-600 leading-relaxed">Challenge a friend to beat your score:</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <a
+                                  href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold rounded-lg text-center transition-colors"
+                                >
+                                  📱 WhatsApp
+                                </a>
+                                <a
+                                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg text-center transition-colors"
+                                >
+                                  𝕏 Twitter
+                                </a>
+                              </div>
+                              <button
+                                onClick={() => navigator.clipboard.writeText(shareUrl)}
+                                className="w-full py-2 bg-white hover:bg-pink-50 border border-pink-200 text-pink-700 text-[11px] font-bold rounded-lg transition-colors"
+                              >
+                                📋 Copy challenge link
+                              </button>
+                            </div>
+                          );
+                        })()}
+
                         {studentRecord && (
                           <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col gap-4">
                             <div className="flex justify-between items-center text-xs font-mono">
