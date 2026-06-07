@@ -5,12 +5,20 @@ import confetti from "canvas-confetti";
 import { Question } from "../types";
 import { playSound, streakBonus, getRandomFact } from "../lib/gameEnhancements";
 import { addWrongAnswers } from "../lib/practice";
+import { creditSkillSchXp } from "../lib/skillschSync";
 import { Doodles } from "./Doodles";
 
 export interface QuickQuizPayload {
   title: string;
   course?: string;
   questions: Question[];
+  /** skill.sch student UID (passed from the deep link). When present, XP is
+   *  credited back to skill.sch on quiz completion. */
+  studentUid?: string;
+  /** skill.sch student display name (optional, used for nicer activity records) */
+  studentName?: string;
+  /** skill.sch student email (optional) */
+  studentEmail?: string;
 }
 
 interface QuickQuizViewProps {
@@ -106,6 +114,8 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
   const [completed, setCompleted] = useState(false);
   const [wrongQs, setWrongQs] = useState<Array<{ questionIndex: number; question: Question }>>([]);
   const [funFact] = useState(() => getRandomFact());
+  const [syncedXp, setSyncedXp] = useState<number | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const total = payload.questions.length;
   const currentQ = payload.questions[qIdx];
@@ -157,6 +167,27 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
           addWrongAnswers(studentName, `skillsch-${Date.now()}`, payload.title, wrongQs);
         }
       } catch {}
+
+      // Credit XP back to skill.sch user profile (silent if not signed in)
+      if (payload.studentUid) {
+        const correct = total - wrongQs.length;
+        creditSkillSchXp({
+          studentUid: payload.studentUid,
+          studentName: payload.studentName,
+          studentEmail: payload.studentEmail,
+          quizTitle: payload.title,
+          course: payload.course,
+          score,
+          correct,
+          wrong: wrongQs.length,
+          total,
+          maxStreak,
+        }).then(r => {
+          if (r.ok) setSyncedXp(score);
+          else setSyncError(r.error || null);
+        });
+      }
+
       setCompleted(true);
       playSound("podium");
       // Confetti! 🎉
@@ -282,6 +313,15 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
             <p className="text-[11px] text-slate-500">
               💡 {wrongQs.length} question{wrongQs.length === 1 ? "" : "s"} saved to your practice deck
             </p>
+          )}
+          {payload.studentUid && syncedXp !== null && (
+            <div className="bg-emerald-50 border border-emerald-200/60 rounded-xl px-4 py-2.5 flex items-center justify-center gap-2 text-emerald-800 text-xs font-bold">
+              <span>✨</span>
+              <span>+{syncedXp} XP added to your SKILL.SCH dashboard</span>
+            </div>
+          )}
+          {payload.studentUid && syncedXp === null && !syncError && (
+            <p className="text-[10px] text-slate-400">Syncing XP to your SKILL.SCH dashboard…</p>
           )}
           <div className="flex gap-2">
             <button
