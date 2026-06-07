@@ -78,6 +78,7 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
   const [isProModalOpen, setIsProModalOpen] = useState(false);
   const [handsRaisedQueue, setHandsRaisedQueue] = useState<string[]>([]);
   const [isProLicensed, setIsProLicensed] = useState(localStorage.getItem("sslive-pro-licensed") === "true");
+  const [selectedPlan, setSelectedPlan] = useState<"annual" | "monthly">("annual");
   const [selectedHistoricalReport, setSelectedHistoricalReport] = useState<any | null>(null);
   const [showProTipRoom, setShowProTipRoom] = useState(localStorage.getItem("dismiss-rooms-protip") !== "true");
   const [renamingRoomId, setRenamingRoomId] = useState<string | null>(null);
@@ -3406,56 +3407,73 @@ export default function TeacherDashboard({ teacherUid, teacherEmail }: TeacherDa
                   ) : (
                     <>
                       <div className="grid grid-cols-2 gap-3 text-center">
-                        <div className="p-2.5 border border-indigo-150 bg-indigo-50/10 rounded-xl relative cursor-pointer">
+                        <div
+                          onClick={() => setSelectedPlan("annual")}
+                          className={`p-2.5 border rounded-xl relative cursor-pointer transition-all ${selectedPlan === "annual" ? "border-indigo-500 bg-indigo-50/20 ring-2 ring-indigo-400/30" : "border-slate-200 hover:border-indigo-200"}`}
+                        >
                           <span className="absolute -top-2 right-2 bg-indigo-600 text-white text-[7px] px-1 rounded-sm uppercase tracking-wider font-extrabold font-mono">SAVE 33%</span>
-                          <p className="text-[10px] text-slate-405 font-bold">Annual Cycle</p>
+                          <p className="text-[10px] text-slate-500 font-bold">Annual Cycle</p>
                           <p className="text-sm font-black text-slate-800 mt-0.5">$8/month</p>
                           <p className="text-[8px] text-slate-400">Billed yearly ($96)</p>
                         </div>
-                        <div className="p-2.5 border border-slate-200 hover:border-indigo-200 rounded-xl cursor-pointer">
-                          <p className="text-[10px] text-slate-405">Monthly Cycle</p>
+                        <div
+                          onClick={() => setSelectedPlan("monthly")}
+                          className={`p-2.5 border rounded-xl cursor-pointer transition-all ${selectedPlan === "monthly" ? "border-indigo-500 bg-indigo-50/20 ring-2 ring-indigo-400/30" : "border-slate-200 hover:border-indigo-200"}`}
+                        >
+                          <p className="text-[10px] text-slate-500">Monthly Cycle</p>
                           <p className="text-sm font-black text-slate-800 mt-0.5">$12/month</p>
                           <p className="text-[8px] text-slate-400">Cancel anytime</p>
                         </div>
                       </div>
 
                       <button
-                        onClick={async (e) => {
-                          const btn = e.currentTarget;
-                          const originalText = btn.innerHTML;
-                          btn.innerHTML = `<span class="flex items-center gap-2"><svg class="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Secure Checkout...</span>`;
-                          btn.disabled = true;
-                          
-                          try {
-                            let locationData = { country_code: "US", continent_code: "NA" };
-                            try {
-                              const geoResp = await fetch("https://get.geojs.io/v1/ip/geo.json");
-                              locationData = await geoResp.json();
-                            } catch (err) {
-                              console.warn("Location detection failed.");
-                            }
-
-                            const resp = await fetch("/api/paystack/initialize", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ email: teacherEmail, locationData })
+                        onClick={async () => {
+                          // Load Paystack inline SDK
+                          if (!document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]')) {
+                            await new Promise<void>((resolve, reject) => {
+                              const s = document.createElement("script");
+                              s.src = "https://js.paystack.co/v1/inline.js";
+                              s.onload = () => resolve();
+                              s.onerror = () => reject(new Error("Failed to load Paystack SDK"));
+                              document.head.appendChild(s);
                             });
-                            const result = await resp.json();
-                            if (result.data && result.data.authorization_url) {
-                              window.location.href = result.data.authorization_url;
-                            } else {
-                              throw new Error(result.error || result.message || "Failed to initialize payment.");
-                            }
-                          } catch (err: any) {
-                            alert("Payment error: " + err.message);
-                            btn.innerHTML = originalText;
-                            btn.disabled = false;
                           }
+                          const PaystackPop = (window as any).PaystackPop;
+                          if (!PaystackPop) { alert("Payment gateway unavailable. Please try again."); return; }
+                          if (!teacherEmail) { alert("No email address found. Please sign in again."); return; }
+
+                          // Amount in kobo (NGN): annual=$96 → ₦148,800, monthly=$12 → ₦18,600
+                          const NGN_RATE = 1550;
+                          const amountUSD = selectedPlan === "annual" ? 96 : 12;
+                          const amountKobo = Math.round(amountUSD * NGN_RATE * 100);
+
+                          const handler = PaystackPop.setup({
+                            key: "pk_live_ed60e4f4795819681d9d81227a608c66a60c2a48",
+                            email: teacherEmail,
+                            amount: amountKobo,
+                            currency: "NGN",
+                            metadata: {
+                              plan: selectedPlan,
+                              platform: "SSLive",
+                              custom_fields: [
+                                { display_name: "Plan", variable_name: "plan", value: selectedPlan === "annual" ? "Annual ($96)" : "Monthly ($12)" },
+                                { display_name: "Platform", variable_name: "platform", value: "SSLive" }
+                              ]
+                            },
+                            callback: () => {
+                              localStorage.setItem("sslive-pro-licensed", "true");
+                              setIsProLicensed(true);
+                              setIsProModalOpen(false);
+                              alert("Payment successful! SSlive PRO is now active.");
+                            },
+                            onClose: () => {}
+                          });
+                          handler.openIframe();
                         }}
-                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white hover:shadow-md hover:shadow-indigo-100 rounded-xl text-xs font-bold transition-all text-center cursor-pointer active:scale-98 flex items-center justify-center gap-2"
+                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-md hover:shadow-indigo-100 rounded-xl text-xs font-bold transition-all text-center cursor-pointer active:scale-98 flex items-center justify-center gap-2"
                       >
                         <Sparkles size={13} />
-                        Get SSlive PRO Whitelist Features Now
+                        Secure Checkout — {selectedPlan === "annual" ? "$96/yr" : "$12/mo"}
                       </button>
                     </>
                   )}
