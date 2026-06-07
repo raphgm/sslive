@@ -988,7 +988,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                               type="submit"
                               className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
                             >
-                              <Send size={12} /> Send Report
+                              <Send size={12} /> Request Report
                             </button>
                           </div>
                         </div>
@@ -1079,7 +1079,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                               {!emailSent ? (
                                 <div className="space-y-3">
                                   <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 w-full">
-                                    <Mail size={12} /> Email report to student
+                                    <Mail size={12} /> Email my report
                                   </label>
                                   <div className="flex gap-2">
                                     <input
@@ -1094,7 +1094,7 @@ export default function StudentScreen({ initialRoomCode = "", onExit }: StudentS
                                       type="submit"
                                       className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
                                     >
-                                      <Send size={12} /> Send Report
+                                      <Send size={12} /> Request Report
                                     </button>
                                   </div>
                                 </div>
