@@ -60,6 +60,8 @@ export interface Room {
   maieuticDialogueEnabled?: boolean;
   allowedRoster?: string[];
   rosterEnabled?: boolean;
+  /** Team mode: players choose a team on join; scores pool per team */
+  teamModeEnabled?: boolean;
   createdAt: any;
 }
 
