@@ -110,73 +110,113 @@ export default function PracticeView({ onExit, studentName: studentOverride }: P
 
   // ─── Render: session complete or empty deck ───────────────────────────────
   if (!sessionActive) {
+    const masteryPct = stats.total > 0 ? Math.round((stats.mastered / stats.total) * 100) : 0;
     return (
-      <div className="min-h-screen bg-neutral-50/60 text-slate-800 font-sans flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white p-6 md:p-8 rounded-2xl border border-slate-200/80 shadow-3xs space-y-5">
-          <button onClick={onExit} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors">
-            <ArrowLeft size={13} /> Back
-          </button>
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/40 text-slate-800 font-sans flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-3xl border border-slate-200/80 shadow-xl shadow-indigo-200/30 overflow-hidden">
+          {/* Gradient header */}
+          <div className="relative px-6 pt-6 pb-12 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 text-white overflow-hidden">
+            <div className="absolute inset-0 opacity-[0.08] bg-[radial-gradient(circle_at_30%_20%,#fff_1px,transparent_1px)] [background-size:24px_24px] pointer-events-none" />
+            <div className="absolute -top-12 -right-8 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none" />
 
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white mx-auto flex items-center justify-center shadow-sm">
-              <Brain size={22} />
-            </div>
-            <h2 className="text-lg font-display font-bold text-slate-900">Practice Deck</h2>
-            <p className="text-xs text-slate-500">Welcome back, <strong className="text-slate-700">{studentName}</strong></p>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="p-3 bg-amber-50 border border-amber-200/60 rounded-xl text-center">
-              <p className="text-2xl font-mono font-black text-amber-700">{stats.due}</p>
-              <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider mt-0.5">Due now</p>
-            </div>
-            <div className="p-3 bg-sky-50 border border-sky-200/60 rounded-xl text-center">
-              <p className="text-2xl font-mono font-black text-sky-700">{stats.learning}</p>
-              <p className="text-[9px] font-bold text-sky-600 uppercase tracking-wider mt-0.5">Learning</p>
-            </div>
-            <div className="p-3 bg-emerald-50 border border-emerald-200/60 rounded-xl text-center">
-              <p className="text-2xl font-mono font-black text-emerald-700">{stats.mastered}</p>
-              <p className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider mt-0.5">Mastered</p>
-            </div>
-          </div>
-
-          {sessionScore.correct + sessionScore.wrong > 0 && (
-            <div className="bg-gradient-to-r from-indigo-50/60 to-purple-50/40 border border-indigo-200/40 rounded-xl p-3 text-center">
-              <p className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider mb-1">Last session</p>
-              <p className="text-sm text-slate-700">
-                <strong className="text-emerald-700">{sessionScore.correct}</strong> correct ·{" "}
-                <strong className="text-rose-600">{sessionScore.wrong}</strong> wrong
-              </p>
-            </div>
-          )}
-
-          {stats.due > 0 ? (
-            <button
-              onClick={() => startSession(studentName)}
-              className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90 text-white text-sm font-bold rounded-xl transition-opacity flex items-center justify-center gap-2"
-            >
-              <Flame size={14} /> Start practice ({stats.due} due)
+            <button onClick={onExit} className="relative z-10 flex items-center gap-1.5 text-xs text-white/80 hover:text-white transition-colors mb-6">
+              <ArrowLeft size={13} /> Back
             </button>
-          ) : stats.total === 0 ? (
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
-              <p className="text-xs text-slate-500 mb-1">No cards yet 📚</p>
-              <p className="text-[11px] text-slate-400">Take a live quiz — wrong answers will appear here for review.</p>
-            </div>
-          ) : (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
-              <Trophy className="mx-auto text-emerald-600 mb-1" size={20} />
-              <p className="text-xs font-bold text-emerald-700">All caught up!</p>
-              <p className="text-[11px] text-emerald-600 mt-1">No cards due. Check back tomorrow.</p>
-            </div>
-          )}
 
-          <button
-            onClick={() => { setStudentName(""); setNameInput(""); }}
-            className="w-full py-2 text-[11px] text-slate-400 hover:text-slate-700 transition-colors"
-          >
-            Switch student
-          </button>
+            <div className="relative z-10 flex items-start justify-between gap-4">
+              <div className="space-y-1.5 flex-1">
+                <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-white/70 font-bold">Practice Deck</p>
+                <h2 className="text-2xl font-display font-black leading-tight">Welcome back, {studentName}</h2>
+                <p className="text-[11px] text-white/75">Spaced repetition · wrong answers return on a schedule</p>
+              </div>
+              <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-lg shrink-0">
+                <Brain size={26} />
+              </div>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 pb-6 -mt-6 space-y-5">
+            {/* Stats card — floats up over the gradient seam */}
+            <div className="grid grid-cols-3 gap-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-2">
+              <div className="rounded-xl p-3 text-center bg-gradient-to-br from-amber-50 to-orange-50/60">
+                <p className="text-2xl font-mono font-black text-amber-700 leading-none">{stats.due}</p>
+                <p className="text-[9px] font-bold text-amber-700/80 uppercase tracking-wider mt-1">Due now</p>
+              </div>
+              <div className="rounded-xl p-3 text-center bg-gradient-to-br from-sky-50 to-blue-50/60">
+                <p className="text-2xl font-mono font-black text-sky-700 leading-none">{stats.learning}</p>
+                <p className="text-[9px] font-bold text-sky-700/80 uppercase tracking-wider mt-1">Learning</p>
+              </div>
+              <div className="rounded-xl p-3 text-center bg-gradient-to-br from-emerald-50 to-teal-50/60">
+                <p className="text-2xl font-mono font-black text-emerald-700 leading-none">{stats.mastered}</p>
+                <p className="text-[9px] font-bold text-emerald-700/80 uppercase tracking-wider mt-1">Mastered</p>
+              </div>
+            </div>
+
+            {/* Mastery progress bar */}
+            {stats.total > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Overall mastery</span>
+                  <span className="text-[11px] font-mono font-bold text-slate-700">{masteryPct}%</span>
+                </div>
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-emerald-400 via-teal-500 to-indigo-500 transition-all duration-700 rounded-full"
+                       style={{ width: `${Math.max(masteryPct, 2)}%` }} />
+                </div>
+              </div>
+            )}
+
+            {sessionScore.correct + sessionScore.wrong > 0 && (
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50/70 border border-indigo-200/60 rounded-xl px-4 py-3 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Last session</p>
+                  <p className="text-sm text-slate-700 mt-0.5">
+                    <strong className="text-emerald-700">{sessionScore.correct} ✓</strong>
+                    <span className="text-slate-300 mx-1.5">·</span>
+                    <strong className="text-rose-600">{sessionScore.wrong} ✗</strong>
+                  </p>
+                </div>
+                <div className="text-2xl">{sessionScore.correct >= sessionScore.wrong ? "🎯" : "💪"}</div>
+              </div>
+            )}
+
+            {/* Primary state */}
+            {stats.due > 0 ? (
+              <button
+                onClick={() => startSession(studentName)}
+                className="group w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold rounded-2xl transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 active:scale-[0.98]"
+              >
+                <Flame size={16} className="text-yellow-300 group-hover:scale-110 transition-transform" />
+                Start practice
+                <span className="text-[10px] font-mono px-2 py-0.5 bg-white/20 rounded-full">{stats.due} due</span>
+              </button>
+            ) : stats.total === 0 ? (
+              <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-indigo-50/30 p-5 text-center">
+                <div className="absolute inset-0 opacity-[0.04] bg-[radial-gradient(circle_at_50%_50%,#4f46e5_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none" />
+                <div className="relative">
+                  <div className="text-3xl mb-2">📚</div>
+                  <p className="text-sm font-bold text-slate-800 mb-1">No cards yet</p>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">Take a live quiz first.<br/>Wrong answers come back here on a spaced schedule.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="relative overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50/60 p-5 text-center">
+                <div className="relative">
+                  <Trophy className="mx-auto text-emerald-500 mb-2" size={28} />
+                  <p className="text-sm font-bold text-emerald-800">All caught up</p>
+                  <p className="text-[11px] text-emerald-700/80 mt-1">No cards due right now. Check back tomorrow — your next card surfaces automatically.</p>
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => { setStudentName(""); setNameInput(""); }}
+              className="w-full py-2 text-[11px] text-slate-400 hover:text-slate-700 font-semibold transition-colors"
+            >
+              Switch student
+            </button>
+          </div>
         </div>
       </div>
     );
