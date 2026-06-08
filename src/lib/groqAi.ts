@@ -213,3 +213,89 @@ Rules:
 
   return { title, questions };
 }
+
+// ─── Visual Summary ────────────────────────────────────────────────────────────
+
+export interface VisualSummaryPoint {
+  /** Short concept title (3–6 words) */
+  concept: string;
+  /** One-sentence real-world explanation */
+  caption: string;
+  /** Single keyword or short phrase for image search (e.g. "solar panels", "supply demand") */
+  imageKeyword: string;
+}
+
+export interface VisualSummary {
+  /** Lesson/quiz title */
+  title: string;
+  /** 5 key concept cards */
+  points: VisualSummaryPoint[];
+}
+
+/**
+ * Ask Groq to extract 5 key visual concepts from the lesson/quiz topic.
+ * Each concept includes a real-world caption and an Unsplash-friendly image keyword.
+ */
+export async function generateVisualSummary(
+  lessonTitle: string,
+  questions: { text: string; correctAnswer: string; explanation?: string }[],
+): Promise<VisualSummary> {
+  const qContext = questions
+    .slice(0, 10)
+    .map((q, i) => `${i + 1}. Q: ${q.text} | A: ${q.correctAnswer}${q.explanation ? ` | Hint: ${q.explanation}` : ""}`)
+    .join("\n");
+
+  const prompt = `You are a visual learning designer. Given the lesson title and quiz Q&A below, extract exactly 5 key concepts from this lesson.
+
+Lesson: "${lessonTitle}"
+
+Quiz Q&A:
+${qContext}
+
+Return ONLY a JSON object with this exact schema:
+{
+  "title": "string — the lesson title",
+  "points": [
+    {
+      "concept": "string — 3 to 6 word concept title",
+      "caption": "string — one sentence explaining this concept with a real-world analogy or example",
+      "imageKeyword": "string — 1 to 3 words for an Unsplash image search that perfectly illustrates this concept visually (e.g. 'solar panel roof', 'stock market chart', 'DNA helix')"
+    }
+  ]
+}
+
+Rules:
+- Exactly 5 points.
+- imageKeyword must be concrete and visual — not abstract (avoid words like 'concept', 'idea', 'learning').
+- captions must be plain English, vivid, and relatable to a student.
+- Do not add commentary outside the JSON.`;
+
+  const raw = await groqChat(prompt, {
+    model: FAST_MODEL,
+    jsonMode: true,
+    systemPrompt: "You are an expert educational visual designer. Return ONLY valid JSON.",
+    retries: 2,
+    temperature: 0.65,
+  });
+
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  let parsed: any;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new Error("Visual summary AI returned invalid JSON.");
+  }
+
+  const points: VisualSummaryPoint[] = (Array.isArray(parsed.points) ? parsed.points : [])
+    .slice(0, 5)
+    .map((p: any) => ({
+      concept: String(p.concept || "Key Concept").trim(),
+      caption: String(p.caption || "").trim(),
+      imageKeyword: String(p.imageKeyword || lessonTitle).trim(),
+    }))
+    .filter((p: VisualSummaryPoint) => p.concept && p.caption);
+
+  if (points.length === 0) throw new Error("No visual summary points returned.");
+
+  return { title: String(parsed.title || lessonTitle), points };
+}

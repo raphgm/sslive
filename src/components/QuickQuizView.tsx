@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ArrowLeft, Check, X, Trophy, Flame, Zap, Lightbulb, RotateCcw } from "lucide-react";
+import { ArrowLeft, Check, X, Trophy, Flame, Zap, Lightbulb, RotateCcw, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import confetti from "canvas-confetti";
 import { Question } from "../types";
@@ -7,6 +7,7 @@ import { playSound, streakBonus, getRandomFact } from "../lib/gameEnhancements";
 import { addWrongAnswers } from "../lib/practice";
 import { creditSkillSchXp } from "../lib/skillschSync";
 import { Doodles } from "./Doodles";
+import VisualSummaryCard from "./VisualSummaryCard";
 
 export interface QuickQuizPayload {
   title: string;
@@ -122,6 +123,7 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
   const [funFact] = useState(() => getRandomFact());
   const [syncedXp, setSyncedXp] = useState<number | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [showVisualSummary, setShowVisualSummary] = useState(false);
 
   const total = payload.questions.length;
   const currentQ = payload.questions[qIdx];
@@ -353,17 +355,30 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
                 💡 <strong className="text-slate-700">{wrongQs.length} question{wrongQs.length === 1 ? "" : "s"}</strong> saved to your practice deck
               </p>
             )}
-            
+
             {payload.studentUid && syncedXp !== null && (
               <div className="bg-emerald-50 border border-emerald-200/60 rounded-xl px-4 py-3 flex items-center justify-center gap-2 text-emerald-800 text-xs font-bold shadow-sm">
                 <span className="text-base">✨</span>
                 <span>+{syncedXp} XP added to your SKILL.SCH dashboard</span>
               </div>
             )}
-            
+
             {payload.studentUid && syncedXp === null && !syncError && (
               <p className="text-[10px] text-slate-400 font-mono animate-pulse">Syncing XP to your SKILL.SCH dashboard…</p>
             )}
+
+            {/* Visual Study Card CTA */}
+            <motion.button
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.65 }}
+              onClick={() => setShowVisualSummary(true)}
+              className="w-full py-4 rounded-2xl border-2 border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 text-amber-800 font-bold text-sm flex items-center justify-center gap-2.5 transition-all active:scale-95 shadow-sm"
+            >
+              <Sparkles size={16} className="text-amber-500" />
+              View Visual Study Card
+              <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-black uppercase tracking-wide ml-1">New</span>
+            </motion.button>
 
             <div className="flex gap-3 mt-2">
               <button
@@ -383,6 +398,15 @@ export default function QuickQuizView({ payload, onExit }: QuickQuizViewProps) {
               </button>
             </div>
           </motion.div>
+
+          {/* Visual Summary Modal */}
+          {showVisualSummary && (
+            <VisualSummaryCard
+              lessonTitle={payload.title}
+              questions={payload.questions}
+              onClose={() => setShowVisualSummary(false)}
+            />
+          )}
         </motion.div>
       </QuickQuizShell>
     );
