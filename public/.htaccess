@@ -1,7 +1,9 @@
 # ============================================================
-# SSLive — Apache config for Hostinger (SPA served from a subfolder)
-# Lives at: public_html/sslive/.htaccess
-# Public URL: https://skill-sch.com/sslive/
+# SSLive — Apache config for Hostinger
+# Works from BOTH mount points that resolve to this folder:
+#   • https://skill-sch.com/sslive/   (subfolder)
+#   • https://sslive.skill-sch.com/    (subdomain docroot = this folder)
+# No RewriteBase is hardcoded, so the SPA fallback is mount-point agnostic.
 # Vite copies this file from public/ into dist/ on every `npm run build`.
 # ============================================================
 
@@ -9,12 +11,13 @@
 Options -MultiViews
 
 RewriteEngine On
-RewriteBase /sslive/
 
 # --- SPA fallback ---------------------------------------------------
 # Serve real files and folders (hashed assets, images, favicon) directly;
-# send every other path under /sslive/ to the SPA entry point so the
-# client-side app (query params + #quiz= hash) can take over.
+# send every other request to index.html in THIS directory so the
+# client-side app (query params + #quiz= hash) can take over. The relative
+# target (no leading slash, no RewriteBase) resolves correctly whether this
+# folder is reached as /sslive/ or as the subdomain root /.
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
