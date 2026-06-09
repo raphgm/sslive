@@ -3,8 +3,11 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({command}) => {
   return {
+    // Production build is served from https://skill-sch.com/sslive/ (Hostinger
+    // subfolder). Dev stays at root so `npm run dev` keeps working unchanged.
+    base: command === 'build' ? '/sslive/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
